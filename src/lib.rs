@@ -29,6 +29,7 @@ pub mod io;
 pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
+mod instruments;
 
 use std::fmt::Debug;
 use std::sync::Arc;
