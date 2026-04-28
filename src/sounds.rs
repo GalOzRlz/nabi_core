@@ -11,7 +11,7 @@ use fundsp::prelude64::{
     dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
     var,
 };
-use crate::instruments::{pluck_comb_string, };
+use crate::instruments::pluck_comb;
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -314,11 +314,11 @@ pub fn harpsichord(state: &SharedMidiState) -> Box<dyn AudioUnit> {
         attack: 0.005,
         decay: 2.0,        // let the string ring longer
         sustain: 0.0,
-        release: 0.5,
+        release: 0.1,
     };
     let gate = state.control_var().clone();
     let mix = (state.bent_pitch().clone() | gate)
-        >> pluck_comb_string()
+        >> pluck_comb()
         >> lowpass_hz(9000.0, 0.5);
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }

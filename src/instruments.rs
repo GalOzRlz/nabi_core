@@ -35,7 +35,7 @@ impl CombPluck {
     ///
     /// # Parameters
     /// - `feedback`: Decay per sample (0.0 to 1.0). Higher = longer sustain.
-    /// - `max_delay_seconds`: Maximum delay time for lowest frequency.
+    /// - `max_delay_seconds`: Maximum delay time for lowest frequency (defines lowest note).
     /// - `excitation_gain`: Volume of initial noise burst (0.0 to 1.0).
     pub fn new(feedback: f64, max_delay_seconds: f64, excitation_gain: f64) -> Self {
         let sample_rate = DEFAULT_SR;
@@ -72,7 +72,7 @@ impl CombPluck {
         }
 
         for sample in &mut self.buffer {
-            let noise = (fastrand::f32() * 2.0 - 1.0) * self.excitation_gain as f32;
+            let noise = (fastrand::f32() * 2.0 - 1.0) * self.excitation_gain as f32; // todo: provide your own noise source?
             *sample = noise;
         }
 
@@ -119,6 +119,7 @@ impl CombPluck {
             + self.buffer[idx2] as f64 * read_frac;
 
         let output = delayed;
+        // todo: add polarity option
         let write_value = delayed * self.feedback + excitation;
         self.buffer[self.write_pos] = write_value as f32;
 
@@ -131,8 +132,6 @@ impl CombPluck {
         [output as f32].into()
     }
 }
-unsafe impl Send for CombPluck {}
-unsafe impl Sync for CombPluck {}
 
 impl AudioNode for CombPluck {
     const ID: u64 = 67;
@@ -185,17 +184,6 @@ pub fn pluck_string_generic(feedback: f64, max_delay_seconds: f64, gain: f64) ->
     An(CombPluck::new(feedback, max_delay_seconds, gain))
 }
 
-pub fn pluck_comb_string() -> An<CombPluck>  {
+pub fn pluck_comb() -> An<CombPluck>  {
     pluck_string_generic(0.995, 0.1, 0.5)
-}
-
-/// Factory function: bass pluck (longer sustain, lower range).
-pub fn pluck_bass() -> An<CombPluck>  {
-    pluck_string_generic(0.995, 0.1, 0.5)
-}
-
-
-/// Factory function: short percussive pluck.
-pub fn pluck_percussion() -> CombPluck {
-    CombPluck::new(0.98, 0.05, 0.8)
 }
