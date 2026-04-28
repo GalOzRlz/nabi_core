@@ -11,7 +11,7 @@ use fundsp::prelude64::{
     dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
     var,
 };
-use crate::instruments::{pluck_string, };
+use crate::instruments::{pluck_comb_string, };
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -58,7 +58,7 @@ pub fn favorites() -> ProgramTable {
         ("Clavichord (Sharp)", clavichord_sharp),
         ("Clavichord (Soft)", clavichord_soft),
         ("Guitar-ish", guitarish),
-        ("Comb-String", comb_string)
+        ("harpsichord", harpsichord)
     ]
 }
 
@@ -309,13 +309,16 @@ pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
 
-pub fn comb_string(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+pub fn harpsichord(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
         attack: 0.005,
-        decay: 1.0,
+        decay: 2.0,        // let the string ring longer
         sustain: 0.0,
-        release: 0.8,
+        release: 0.5,
     };
-    let mix = pluck_string()  >> lowpass_hz::<f32>(9000.0, 0.5);
-    state.assemble_unpitched_sound(Box::new(mix), adsr.boxed(state))
+    let gate = state.control_var().clone();
+    let mix = (state.bent_pitch().clone() | gate)
+        >> pluck_comb_string()
+        >> lowpass_hz(9000.0, 0.5);
+    state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }

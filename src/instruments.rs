@@ -1,11 +1,3 @@
-//! Karplus-Strong plucked string synthesis using a variable-frequency comb filter.
-//!
-//! This implementation features:
-//! - Real-time pitch changes (pitch bend, vibrato, glissando)
-//! - Gate-triggered excitation (no re-plucking on frequency changes)
-//! - Smooth frequency interpolation to avoid clicks
-//! - No dynamic allocations after initialization
-
 use fundsp::prelude64::*;
 
 /// A plucked string synthesizer with independent pitch and gate control.
@@ -20,15 +12,15 @@ use fundsp::prelude64::*;
 pub struct CombPluck {
     // Constants
     sample_rate: f64,
-    max_delay_samples: usize,   // in samples, integer
+    max_delay_samples: usize,
     feedback: f64,
     excitation_gain: f64,
     smoothing: f64,
 
-    // Delay line state
-    buffer: Vec<f32>,           // audio samples are f64
+
+    buffer: Vec<f32>,
     write_pos: usize,
-    read_pos_f: f64,            // fractional read position
+    read_pos_f: f64,
 
     // Pitch tracking
     current_freq: f64,
@@ -46,7 +38,7 @@ impl CombPluck {
     /// - `max_delay_seconds`: Maximum delay time for lowest frequency.
     /// - `excitation_gain`: Volume of initial noise burst (0.0 to 1.0).
     pub fn new(feedback: f64, max_delay_seconds: f64, excitation_gain: f64) -> Self {
-        let sample_rate = 44100.0;
+        let sample_rate = DEFAULT_SR;
         let max_delay_samples = (max_delay_seconds * sample_rate).ceil() as usize;
         let max_delay_samples = Num::max(max_delay_samples, 2);
 
@@ -144,7 +136,7 @@ unsafe impl Sync for CombPluck {}
 
 impl AudioNode for CombPluck {
     const ID: u64 = 67;
-    type Inputs = typenum::U1;
+    type Inputs = typenum::U2;
     type Outputs = typenum::U1;
 
     fn reset(&mut self) {
@@ -159,8 +151,7 @@ impl AudioNode for CombPluck {
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
-        // Recalculate max delay samples for new sample rate, preserving the same time duration
-        let duration_secs = self.max_delay_samples as f64 / 44100.0; // original was based on 44.1k
+        let duration_secs = self.max_delay_samples as f64 / self.sample_rate;
         self.max_delay_samples = (duration_secs * sample_rate).ceil() as usize;
         self.max_delay_samples = Num::max(self.max_delay_samples, 2);
         self.reset();
@@ -186,56 +177,25 @@ impl AudioNode for CombPluck {
     }
 }
 
-
 /// Factory function: medium‑sustain pluck (guitar-like).
-pub fn pluck_string() -> An<CombPluck> {
-    An(CombPluck::new(0.995, 0.1, 0.5))
+pub fn pluck_string_generic(feedback: f64, max_delay_seconds: f64, gain: f64) -> An<CombPluck> {
+    let feedback = feedback.clamp(0.0, 1.0);
+    let max_delay_seconds = max_delay_seconds.clamp(0.0, 1.0);
+    let gain = gain.clamp(0.0, 1.0);
+    An(CombPluck::new(feedback, max_delay_seconds, gain))
+}
+
+pub fn pluck_comb_string() -> An<CombPluck>  {
+    pluck_string_generic(0.995, 0.1, 0.5)
 }
 
 /// Factory function: bass pluck (longer sustain, lower range).
-pub fn pluck_bass() -> CombPluck {
-    CombPluck::new(0.998, 0.2, 0.6)
+pub fn pluck_bass() -> An<CombPluck>  {
+    pluck_string_generic(0.995, 0.1, 0.5)
 }
+
 
 /// Factory function: short percussive pluck.
 pub fn pluck_percussion() -> CombPluck {
     CombPluck::new(0.98, 0.05, 0.8)
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn test_comb_pluck_creates_output() {
-//         let mut pluck = CombPluck::new(0.99, 0.1, 0.5);
-//         pluck.set_sample_rate(48000.0);
-//         let input = Frame::from([440.0, 1.0]);
-//         let output = pluck.tick(&input);
-//         assert!(output[0] != 0.0);
-//     }
-//
-//     #[test]
-//     fn test_gate_detection() {
-//         let mut pluck = CombPluck::new(0.99, 0.1, 0.5);
-//         pluck.set_sample_rate(48000.0);
-//         let input1 = Frame::from([440.0, 0.0]);
-//         let _ = pluck.tick(&input1);
-//         let input2 = Frame::from([440.0, 1.0]);
-//         let output2 = pluck.tick(&input2);
-//         assert!(output2[0] != 0.0);
-//         let input3 = Frame::from([440.0, 1.0]);
-//         let output3 = pluck.tick(&input3);
-//         assert!(output3[0].abs() <= output2[0].abs());
-//     }
-//
-//     #[test]
-//     fn test_frequency_change_without_triggers() {
-//         let mut pluck = CombPluck::new(0.99, 0.1, 0.5);
-//         pluck.set_sample_rate(48000.0);
-//         let _ = pluck.tick(&Frame::from([440.0, 1.0]));
-//         let output_440 = pluck.tick(&Frame::from([440.0, 1.0]));
-//         let output_880 = pluck.tick(&Frame::from([880.0, 1.0]));
-//         assert!(output_440[0] != 0.0 || output_880[0] != 0.0);
-//     }
-// }
