@@ -184,11 +184,6 @@ impl AudioNode for CombPluck {
         let output = self.process_comb(0.0);
         output.into()
     }
-    fn set(&mut self, setting: Setting) {}
-    fn set_hash(&mut self, hash: u64) {}
-    fn route(&mut self, input: &SignalFrame, _frequency: f64) -> SignalFrame {
-        SignalFrame::new(self.outputs())
-    }
 }
 
 

@@ -11,7 +11,7 @@ use fundsp::prelude64::{
     dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
     var,
 };
-use crate::instruments::{pluck_string, CombPluck};
+use crate::instruments::{pluck_string, };
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
