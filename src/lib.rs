@@ -40,6 +40,7 @@ use fundsp::prelude::{An, AudioUnit, FrameMul};
 use fundsp::prelude64::{shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::MidiMsg;
+use midi_msg::ControlChange::CC;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -68,6 +69,7 @@ pub struct SharedMidiState {
     control: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
+    control_change: Option<Shared>,
 }
 
 impl Default for SharedMidiState {
@@ -78,6 +80,7 @@ impl Default for SharedMidiState {
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
+            control_change: None,
         }
     }
 }
@@ -89,6 +92,7 @@ impl Debug for SharedMidiState {
             .field("velocity", &self.velocity.value())
             .field("control", &self.control.value())
             .field("pitch_bend", &self.pitch_bend.value())
+            .field("control_change", &self.control_change.as_ref().unwrap().value())
             .finish()
     }
 }
@@ -113,7 +117,7 @@ impl SharedMidiState {
     ///
     /// The volume is determined from the velocity of the most recent `Note On` event in combination with the
     /// output from the `adjuster`. The `adjuster` should use `control_var()` to determine whether the most recent
-    /// event is `Note On` or `Note Off`, and adjust the volume accordingly, whether it is a sudden cutoff or
+    /// event is `Note On` or `Note Off`, and adjust the volume acontrol_changeordingly, whether it is a sudden cutoff or
     /// a gradual release.
     pub fn volume(&self, adjuster: Box<dyn AudioUnit>) -> Net {
         Net::binary(
@@ -168,6 +172,22 @@ impl SharedMidiState {
     /// Converts MIDI pitch-bend message to +/- 1 semitone using [this algorithm](https://sites.uci.edu/camp2014/2014/04/30/managing-midi-pitchbend-messages/).
     pub fn bend(&self, bend: u16) {
         self.pitch_bend.set_value(pitch_bend_factor(bend));
+    }
+}
+
+/// If a given `MidiMsg` object is encapsulating a `ControlChange` it returns
+/// the control id and value values of that message.
+pub fn control_change_from(msg: &MidiMsg) -> Option<(u8, u8)> {
+    if let MidiMsg::ChannelVoice {
+        msg: midi_msg::ChannelVoiceMsg::ControlChange {
+            control: CC { control, value },
+        },
+        ..
+    } = msg
+    {
+        Some((*control, *value))
+    } else {
+        None
     }
 }
 
