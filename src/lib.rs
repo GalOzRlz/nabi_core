@@ -69,7 +69,7 @@ pub struct SharedMidiState {
     control: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
-    control_change: Option<Shared>,
+    control_change: [Shared; 128],
 }
 
 impl Default for SharedMidiState {
@@ -80,19 +80,20 @@ impl Default for SharedMidiState {
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
-            control_change: None,
+            control_change: core::array::from_fn(|_| Shared::new(65.0)),
         }
     }
 }
 
 impl Debug for SharedMidiState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let cc_vals: [f32; 128] = std::array::from_fn(|i| self.control_change[i].value());
         f.debug_struct("SharedMidiState")
             .field("pitch", &self.pitch.value())
             .field("velocity", &self.velocity.value())
             .field("control", &self.control.value())
             .field("pitch_bend", &self.pitch_bend.value())
-            .field("control_change", &self.control_change.as_ref().unwrap().value())
+            .field("cc_values", &cc_vals)
             .finish()
     }
 }
@@ -153,6 +154,11 @@ impl SharedMidiState {
             FrameMul::new(),
         ))
     }
+
+    pub fn set_control_change(&self, control_id: u8, value: u8) {
+        self.control_change[control_id as usize].set_value(value as f32)
+    }
+
 
     /// Encodes a MIDI `Note On` event.
     pub fn on(&self, pitch: u8, velocity: u8) {
