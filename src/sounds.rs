@@ -34,7 +34,8 @@ pub fn options() -> ProgramTable {
         ("Xylophone", xylophone),
         ("Clavichord (Sharp)", clavichord_sharp),
         ("Clavichord (Soft)", clavichord_soft),
-        ("Guitar-ish", guitarish)
+        ("Guitar-ish", guitarish),
+        ("Music Box", music_box)
     ]
 }
 
