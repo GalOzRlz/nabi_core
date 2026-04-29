@@ -11,7 +11,7 @@ use fundsp::prelude64::{
     dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
     var,
 };
-use crate::instruments::pluck_comb;
+use crate::instruments::{hit_comb_pipe, pluck_comb_string};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -42,23 +42,13 @@ pub fn options() -> ProgramTable {
 /// Returns a `ProgramTable` containing sounds that are personal favorites of the crate author.
 pub fn favorites() -> ProgramTable {
     program_table![
-        ("80s Beep", simple_triangle),
-        ("Triangle", adsr_triangle),
-        ("Organ", adsr_organ),
-        ("Saw", adsr_saw),
-        ("Soft Saw", adsr_soft_saw),
-        ("Square", adsr_square),
-        ("Pulse", adsr_pulse),
-        ("Moog Organ", moog_organ),
-        ("Moog Saw", moog_saw),
-        ("Moog Square", moog_square),
-        ("Moog Pulse", moog_pulse),
         ("Acoustic Grand Piano", acoustic_grand_piano),
         ("Xylophone", xylophone),
         ("Clavichord (Sharp)", clavichord_sharp),
         ("Clavichord (Soft)", clavichord_soft),
         ("Guitar-ish", guitarish),
-        ("harpsichord", harpsichord)
+        ("harpsichord", harpsichord),
+        ("Plastic Pipe", plastic_pipe)
     ]
 }
 
@@ -318,7 +308,21 @@ pub fn harpsichord(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     };
     let gate = state.control_var().clone();
     let mix = (state.bent_pitch().clone() | gate)
-        >> pluck_comb()
+        >> pluck_comb_string()
         >> lowpass_hz(9000.0, 0.5);
+    state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
+}
+
+pub fn plastic_pipe(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.005,
+        decay: 1.0,        // let the string ring longer
+        sustain: 0.0,
+        release: 0.1,
+    };
+    let gate = state.control_var().clone();
+    let mix = (state.bent_pitch().clone() | gate)
+        >> hit_comb_pipe()
+        >> lowpass_hz(7000.0, 0.5);
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
