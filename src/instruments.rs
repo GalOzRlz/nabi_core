@@ -24,6 +24,11 @@ pub struct CombPluck {
     current_freq: f32,
     target_freq: f32,
     last_gate: f32,
+    damping_active: bool,
+    damping: f32,
+    damping_freq: f32,
+    g: f32,
+    filter_state: f32,
 }
 
 impl CombPluck {
@@ -33,13 +38,13 @@ impl CombPluck {
     /// - `feedback`: Decay per sample (0.0 to 1.0). Higher = longer sustain.
     /// - `max_delay_seconds`: Maximum delay time for lowest frequency (defines lowest note).
     /// - `excitation_gain`: Volume of initial noise burst (0.0 to 1.0).
-    pub fn new(feedback: f32, max_delay_seconds: f32, excitation_gain: f32) -> Self {
+    pub fn new(feedback: f32, max_delay_seconds: f32, excitation_gain: f32, damping: f32) -> Self {
         let sample_rate = DEFAULT_SR as f32;
         let max_delay_samples = (max_delay_seconds * sample_rate).ceil() as usize;
         let max_delay_samples = max(max_delay_samples, 2);
         let max_delay_samples_f32 = max_delay_samples as f32;
 
-        Self {
+        let mut s = Self {
             sample_rate,
             max_delay_samples,
             max_delay_samples_f32,
@@ -47,18 +52,32 @@ impl CombPluck {
             feedback: feedback.clamp(0.0, 1.0),
             excitation_gain: excitation_gain.clamp(0.0, 1.0),
             smoothing: 0.05,
-
             buffer: Vec::with_capacity(max_delay_samples),
             write_pos: 0,
             read_pos_f: 0.0,
-
             current_freq: 440.0,
             target_freq: 440.0,
-
             last_gate: 0.0,
-        }
+            damping_active: false,
+            damping: 0.0,
+            damping_freq: 0.0,
+            g: 0.0,
+            filter_state: 0.0,
+        };
+        s.set_damping(damping);
+        s
     }
-
+    pub fn set_damping(&mut self, damping: f32) {
+        self.damping_active = damping > 0.0;
+        self.damping = damping.clamp(0.0, 1.0);
+        self.update_damping();
+    }
+    fn update_damping(&mut self) {
+        let min_freq = 200.0;
+        let max_freq = 20000.0;
+        self.damping_freq = max_freq * (1.0 - self.damping) + min_freq * self.damping;
+        self.g = (-std::f32::consts::TAU * self.damping_freq / self.sample_rate).exp();
+    }
     /// Set the smoothing coefficient for frequency changes.
     pub fn set_smoothing(&mut self, smoothing: f32) {
         self.smoothing = smoothing.clamp(0.0, 1.0);
@@ -104,6 +123,7 @@ impl CombPluck {
         self.read_pos_f = raw_read - max * (raw_read * self.inv_max_delay).floor();
         self.read_pos_f = raw_read - max * (raw_read * self.inv_max_delay).floor();
     }
+
     /// Process one sample through the comb filter.
     fn process_comb(&mut self, excitation: f32) -> Frame<f32, typenum::U1> {
         if self.buffer.is_empty() {
@@ -120,8 +140,17 @@ impl CombPluck {
             + self.buffer[idx2] * read_frac;
 
         let output = delayed;
-        // todo: add polarity option
-        let write_value = delayed * self.feedback + excitation;
+        let filtered = if self.damping <= 0.0 {
+            delayed
+        } else {
+            // apply low pass to dampen
+            let filtered = delayed * (1.0 - self.g) + self.filter_state * self.g;
+            self.filter_state = filtered;
+            filtered
+        };
+
+        // Apply feedback after filtering
+        let write_value = filtered * self.feedback + excitation;
         self.buffer[self.write_pos] = write_value;
 
         // Advance pointers
@@ -156,6 +185,7 @@ impl AudioNode for CombPluck {
         self.max_delay_samples = (duration_secs * self.sample_rate).ceil() as usize;
         self.max_delay_samples = Num::max(self.max_delay_samples, 2);
         self.reset();
+        self.update_damping();
     }
 
     #[inline]
@@ -178,13 +208,13 @@ impl AudioNode for CombPluck {
     }
 }
 
-fn pluck_string_generic(feedback: f32, max_delay_seconds: f32, gain: f32) -> An<CombPluck> {
+fn pluck_string_generic(feedback: f32, max_delay_seconds: f32, gain: f32, damping: f32) -> An<CombPluck> {
     let feedback = feedback.clamp(0.0, 1.0);
     let max_delay_seconds = max_delay_seconds.clamp(0.0, 1.3);
     let gain = gain.clamp(0.0, 1.0);
-    An(CombPluck::new(feedback, max_delay_seconds, gain))
+    An(CombPluck::new(feedback, max_delay_seconds, gain, damping))
 }
 
 pub fn pluck_comb() -> An<CombPluck>  {
-    pluck_string_generic(0.995, 0.1, 0.5)
+    pluck_string_generic(0.995, 0.1, 0.5, 0.1)
 }
