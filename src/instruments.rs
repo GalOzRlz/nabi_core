@@ -1,6 +1,6 @@
 use fundsp::prelude64::*;
 
-/// A plucked string synthesizer with independent pitch and gate control.
+/// A comb-filter based plucked string synthesizer with independent pitch and gate control.
 ///
 /// # Inputs
 /// - **Input 0**: Frequency (Hz) - can be modulated at audio rate
@@ -18,7 +18,7 @@ pub struct CombPluck {
     smoothing: f64,
 
 
-    buffer: Vec<f32>,
+    buffer: Vec<f64>,
     write_pos: usize,
     read_pos_f: f64,
 
@@ -72,7 +72,7 @@ impl CombPluck {
         }
 
         for sample in &mut self.buffer {
-            let noise = (fastrand::f32() * 2.0 - 1.0) * self.excitation_gain as f32; // todo: provide your own noise source?
+            let noise = (fastrand::f64() * 2.0 - 1.0) * self.excitation_gain; // todo: provide your own noise source?
             *sample = noise;
         }
 
@@ -121,7 +121,7 @@ impl CombPluck {
         let output = delayed;
         // todo: add polarity option
         let write_value = delayed * self.feedback + excitation;
-        self.buffer[self.write_pos] = write_value as f32;
+        self.buffer[self.write_pos] = write_value;
 
         // Advance pointers
         self.write_pos = (self.write_pos + 1) % self.max_delay_samples;
@@ -176,10 +176,9 @@ impl AudioNode for CombPluck {
     }
 }
 
-/// Factory function: medium‑sustain pluck (guitar-like).
-pub fn pluck_string_generic(feedback: f64, max_delay_seconds: f64, gain: f64) -> An<CombPluck> {
+fn pluck_string_generic(feedback: f64, max_delay_seconds: f64, gain: f64) -> An<CombPluck> {
     let feedback = feedback.clamp(0.0, 1.0);
-    let max_delay_seconds = max_delay_seconds.clamp(0.0, 1.0);
+    let max_delay_seconds = max_delay_seconds.clamp(0.0, 1.3);
     let gain = gain.clamp(0.0, 1.0);
     An(CombPluck::new(feedback, max_delay_seconds, gain))
 }
