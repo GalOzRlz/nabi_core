@@ -7,10 +7,7 @@ use fundsp::prelude::{
     AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass,
     resonator_hz,
 };
-use fundsp::prelude64::{
-    dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
-    var,
-};
+use fundsp::prelude64::{constant, dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle, var};
 use crate::instruments::{hit_comb_pipe, pluck_comb_string};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
@@ -302,12 +299,12 @@ pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 pub fn harpsichord(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
         attack: 0.005,
-        decay: 2.0,        // let the string ring longer
+        decay: 0.8,
         sustain: 0.0,
-        release: 0.1,
+        release: 0.0,
     };
     let gate = state.control_var().clone();
-    let mix = (state.bent_pitch().clone() | gate)
+    let mix = (state.bent_pitch().clone() | gate | constant(0.0))
         >> pluck_comb_string()
         >> lowpass_hz(9000.0, 0.5);
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
@@ -316,12 +313,12 @@ pub fn harpsichord(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 pub fn plastic_pipe(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
         attack: 0.005,
-        decay: 1.0,        // let the string ring longer
+        decay: 0.5,
         sustain: 0.0,
-        release: 0.1,
+        release: 0.0,
     };
     let gate = state.control_var().clone();
-    let mix = (state.bent_pitch().clone() | gate)
+    let mix = (state.bent_pitch().clone() | gate | constant(0.0))
         >> hit_comb_pipe()
         >> lowpass_hz(7000.0, 0.5);
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
