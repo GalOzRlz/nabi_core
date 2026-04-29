@@ -160,6 +160,10 @@ impl SharedMidiState {
         self.control_change[control_id as usize].set_value(value as f32)
     }
 
+    /// get a control change value based on its data index
+    pub fn control_change_var(&self, idx: usize) -> An<Var> {
+    var(&self.control_change[idx])
+    }
 
     /// Encodes a MIDI `Note On` event.
     pub fn on(&self, pitch: u8, velocity: u8) {
