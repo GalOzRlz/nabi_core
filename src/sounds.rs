@@ -4,10 +4,7 @@ use crate::sound_builders::{Adsr, ProgramTable, simple_sound};
 use crate::{SharedMidiState, program_table};
 use fundsp::net::Net;
 use fundsp::prelude::{AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz};
-use fundsp::prelude64::{
-    dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
-    var, adsr_live, clip,
-};
+use fundsp::prelude64::{dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle, var, adsr_live, clip, map, follow, lowpass_q};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -305,7 +302,7 @@ pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
 
-/// music box/prepared piano type instrument with Midi CC channel 74 controlling it's filter cutoff frequency
+/// Something between a celesta and a prepared-piano with filter cutoff mapped to midi CC 74
 pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let synth_adsr = Adsr {
         attack: 0.002,
@@ -319,27 +316,37 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let a4 = 0.100;
     let gate = state.control_var();
 
-    let modes = (mul(1.000) >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.0, synth_adsr.release))
-        & (mul(2.756) >> sine() * a1) * (gate.clone() >> adsr_live(0.002, 0.5/2.0, 0.0, synth_adsr.release))
-        & (mul(5.404) >> sine() * a2) * (gate.clone() >> adsr_live(0.002, 0.5/5.0, 0.0, synth_adsr.release))
-        & (mul(8.933) >> sine() * a3) * (gate.clone() >> adsr_live(0.002, 0.5/10.0, 0.0, synth_adsr.release))
-        & (mul(13.34) >> sine() * a4) * (gate.clone() >> adsr_live(0.002, 0.5/18.0, 0.0, synth_adsr.release))
-        >> lowpass_hz(9000.0, 0.7))
-        >> dcblock::<f64>();
+    let modes = (mul(1.000)
+        >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.0, synth_adsr.release))
+        & (mul(2.756) >> sine() * a1)
+        * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))
+        & (mul(5.404) >> sine() * a2)
+        * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release))
+        & (mul(8.933) >> sine() * a3)
+        * (gate.clone() >> adsr_live(0.002, 0.5 / 10.0, 0.0, synth_adsr.release))
+        & (mul(13.34) >> sine() * a4)
+        * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release))
+        >> dcblock::<f64>());
 
-    // control channel 74 used for cutoff frequency
-    let cut_off_cc = state.get_control_change(74);
-    let cutoff_frequency = 50.0 + cut_off_cc.value() * 4950.0;
     let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
-
     let body = (pass() * 0.7)
         & (0.5 * resonator_hz(150.0, 20.0))
         & (0.3 * resonator_hz(320.0, 25.0))
         & (0.1 * resonator_hz(550.0, 15.0));
 
-    let synth = Box::new(
-        tone >> body * db_amp(-4.0) >> highpass_hz(30.0, 0.7) >> lowpass_hz(cutoff_frequency, 0.6) >> dcblock::<f64>() >> clip(),
-    );
+    // set cutoff stream with smoothing
+    let cutoff_freq = state.control_change_var(74)
+        >> map(|frame| {
+        let min_freq = 100.0_f32;
+        let max_freq = 17000.0_f32;
+        let norm = frame[0] / 127.0;
+        min_freq * max_freq / min_freq.powf(norm)
+    })
+        >> follow(0.05_f32); // smoothing
 
+    let combined = tone >> body >> highpass_hz(30.0, 0.7) * db_amp(-4.0) ;
+
+    let synth =
+        Box::new((combined | cutoff_freq) >> lowpass_q(0.8) >> dcblock::<f64>() >> clip());
     state.assemble_unpitched_sound(synth, synth_adsr.boxed(state))
 }

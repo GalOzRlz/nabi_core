@@ -155,19 +155,14 @@ impl SharedMidiState {
         ))
     }
 
-    /// Set an incoming control change in an `Array<Shared>` where the array index matches control index.
-    pub fn set_control_change(&self, control_id: u8, value: u8) {
-        self.control_change[control_id as usize].set_value(value as f32)
+    /// Set an incoming control change in an `Array<Shared>` where the array index matches control number.
+    pub fn set_control_change(&self, control_idx: u8, value: u8) {
+        self.control_change[control_idx as usize].set_value(value as f32)
     }
 
     /// get a control change value based on its data index
     pub fn control_change_var(&self, idx: usize) -> An<Var> {
     var(&self.control_change[idx])
-    }
-
-    
-    pub fn get_control_change(&self, idx: usize) ->&Shared {
-        &self.control_change[idx]
     }
 
     /// Encodes a MIDI `Note On` event.
