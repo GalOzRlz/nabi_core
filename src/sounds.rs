@@ -4,7 +4,7 @@ use crate::sound_builders::{Adsr, ProgramTable, simple_sound};
 use crate::{SharedMidiState, program_table};
 use fundsp::net::Net;
 use fundsp::prelude::{AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz};
-use fundsp::prelude64::{dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle, var, adsr_live, clip, map, follow, lowpass_q};
+use fundsp::prelude64::{dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle, var, adsr_live, clip, follow, lowpass_q, product, constant};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -329,24 +329,17 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
         >> dcblock::<f64>());
 
     let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
-    let body = (pass() * 0.7)
+    let body = (pass() * 0.4)
         & (0.5 * resonator_hz(150.0, 20.0))
         & (0.3 * resonator_hz(320.0, 25.0))
         & (0.1 * resonator_hz(550.0, 15.0));
 
     // set cutoff stream with smoothing
-    let cutoff_freq = state.control_change_var(74)
-        >> map(|frame| {
-        let min_freq = 100.0_f32;
-        let max_freq = 17000.0_f32;
-        let norm = frame[0] / 127.0;
-        min_freq * max_freq / min_freq.powf(norm)
-    })
-        >> follow(0.05_f32); // smoothing
-
+    let cutoff_val = state.control_change_var(74);
+    let max_cutoff_hz = 5_000.0;
     let combined = tone >> body >> highpass_hz(30.0, 0.7) * db_amp(-4.0) ;
-
+    let cutoff_hrz = product(constant(max_cutoff_hz/127.0), cutoff_val);
     let synth =
-        Box::new((combined | cutoff_freq) >> lowpass_q(0.8) >> dcblock::<f64>() >> clip());
+        Box::new((combined | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0) >> dcblock::<f64>() >> clip());
     state.assemble_unpitched_sound(synth, synth_adsr.boxed(state))
 }
