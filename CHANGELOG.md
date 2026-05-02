@@ -1,5 +1,8 @@
+# 0.8.0
+  * Updated to `cpal 0.17.3`, `midir 0.11.0`, `midi-msg 0.8.2`
+
 # 0.7.2
-  * Updated to anyhow 1.0.102 and bare_metal_modulo 1.2.6
+  * Updated to `anyhow 1.0.102` and `bare_metal_modulo 1.2.6`
 
 # 0.7.1
   * Factored the functionality  out of `SynthMsg::note_velocity()` into the `note_velocity_from()` function. 
@@ -8,46 +11,46 @@
   * Added `Eq` and `PartialEq` traits to `enum Speaker`
 
 # 0.6.10
-  * updated to cpal 0.17.1
+  * updated to `cpal 0.17.1`
   * Added two clavichord sounds and a guitar-inspired sound.
 
 # 0.6.9
-  * Updated to fundsp 0.23.0
+  * Updated to `fundsp 0.23.0`
   * As the current `fundsp` depends on `std` in `resample.rs`, and since [this pull request](https://github.com/gjf2a/midi_fundsp/pull/3) was concerned with disabling the `files` feature, I updated `Cargo.toml` to enable `std` and `fft`.
 
 # 0.6.8
-  * Updated to fundsp 0.22.0
+  * Updated to `fundsp 0.22.0`
 
 # 0.6.7
-  * Updated to cpal 0.17.0
+  * Updated to `cpal 0.17.0`
 
 # 0.6.6
-  * Updated to midir 0.10.3
+  * Updated to `midir 0.10.3`
 
 # 0.6.5
   * Added Xylophone (thanks @xenacool!)
 
 # 0.6.4
-  * Updated to anyhow 1.0.100 and midi-msg 0.8.1
+  * Updated to `anyhow 1.0.100` and `midi-msg 0.8.1`
 
 # 0.6.3
   * Added Acoustic Grand Piano (thanks @xenacool!)
 
 # 0.6.2
-  * Updated to cpal 0.16.0
+  * Updated to `cpal 0.16.0`
   * Specified full 3-digit dependencies for all.
   * Updated to Rust 2024 edition.
 
 # 0.6.1
-  * Updated to midi-msg 0.8.0.
+  * Updated to `midi-msg 0.8.0`.
 
 # 0.6.0
-  * Updated to fundsp 0.20.0.
+  * Updated to `fundsp 0.20.0`.
   * Since 0.20.0 has a significantly backward-incompatible API, all references
     to `bin_op()` are now `binary()`, `stack_op()` are now `stack()`, and `pipe_op()` are now `pipe()`.
 
 # 0.5.3
-  * Updated to fundsp 0.19.1
+  * Updated to `fundsp 0.19.1`
 
 # 0.5.2
   * Added `start_midi_output_thread()`, enabling users to rely solely on `MidiMsg` objects
