@@ -1,15 +1,17 @@
 use crate::{
-    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, control_change_from, note_velocity_from,
-    sound_builders::ProgramTable,
+    control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
+    NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig,
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use fundsp::prelude::join;
+use fundsp::prelude64::{pass, sink, U2};
 use fundsp::{
     net::Net,
     prelude::{AudioUnit, FrameAdd, FrameMul},
@@ -19,10 +21,8 @@ use fundsp::{
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use read_input::{InputBuild, shortcut::input};
+use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use fundsp::prelude64::{pass, sink, U2};
-use fundsp::prelude::{join, split, U1};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -291,8 +291,8 @@ impl<const N: usize> StereoPlayer<N> {
 
     fn sound(&self) -> Net {
         Net::stack(
-            self.sounds[Speaker::Left.i()].sound() >> split::<U2>() >> (sink() | pass()) >> join::<U1>(),
-            self.sounds[Speaker::Right.i()].sound() >> split::<U2>() >> (pass() | sink()) >> join::<U1>(),
+            self.sounds[Speaker::Left.i()].sound() >> (sink() | pass()) >> join::<U2>(),
+            self.sounds[Speaker::Right.i()].sound() >> (pass() | sink()) >> join::<U2>(),
         )
     }
 
