@@ -330,16 +330,12 @@ impl<const N: usize> StereoPlayer<N> {
         Self::warm_up(midi_msgs.clone());
         let mut done = false;
         while !done {
-            println!("Getting stream");
             let stream = self.get_stream::<T>(&config, &device)?;
             stream.play()?;
-            println!("Finished playing stream");
             if self.handle_messages(midi_msgs.clone()) == RelayedMessage::SystemReset {
                 done = true;
             }
-            println!("Passed the 'if'");
         }
-        println!("Exiting run_synth()");
         Ok(())
     }
 
@@ -498,7 +494,6 @@ impl<const N: usize> MonoPlayer<N> {
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
-        println!("set_midi_to_hz()");
         for i in 0..self.states.len() {
             self.states[i].set_midi_to_hz(midi_to_hz);
         }
@@ -509,7 +504,6 @@ impl<const N: usize> MonoPlayer<N> {
         for i in 1..N {
             sound = Net::binary(sound, Net::wrap(self.sound_at(i)), FrameAdd::new());
         }
-        println!("Invoking sound()");
         Net::binary(
             sound,
             Net::wrap(Box::new(var(&self.master_volume))),
@@ -566,7 +560,6 @@ impl<const N: usize> MonoPlayer<N> {
     }
 
     fn find_next_state(&mut self) -> usize {
-        println!("find_next_state()");
         for i in self.next.iter() {
             if self.recent_pitches[i.a()].is_none() {
                 return self.claim_state(i);
@@ -612,7 +605,6 @@ impl<const N: usize> MonoPlayer<N> {
     }
 
     fn sound_at(&self, i: usize) -> Box<dyn AudioUnit> {
-        println!("sound_at()");
         (self.synth_func)(&self.states[i])
     }
 
