@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::{SharedMidiState, SynthFunc};
 
 #[macro_export]
-/// Convenience macro to build a `ProgramTable`. Given a sequence of tuples of `&str` objects
+/// Convenience macro to build a `ProgramTable` struct. Given a sequence of tuples of `&str` objects
 /// and `SynthFunc` objects, it returns a proper `ProgramTable`.
 macro_rules! program_table {
     ($( ($name:expr, $def:expr) ),* $(,)?) => {
@@ -22,32 +22,29 @@ macro_rules! program_table {
 /// Maximum number of entries controllable via MIDI messages in a MIDI program table.
 pub const NUM_PROGRAM_SLOTS: usize = 2_usize.pow(7);
 
-/// Convenience type alias for MIDI program tables.
-// pub type ProgramTable = Vec<(String, SynthFunc)>;
-
+/// A Speaker Definition enum to handle Mono instruments or Split R/L instruments.
 #[derive(Clone)]
 pub enum SpeakerDef {
     Mono(SynthFunc),
     Stereo { left: SynthFunc, right: SynthFunc },
 }
 
-// Single function → Mono
+/// A Trait to turn an AudioUnit or a tuple of AudioUnit into a SpeakerDef containing SynthFunc(s).
 pub trait IntoSpeakerDef {
     fn into_speaker_def(self) -> SpeakerDef;
 }
 
-// Tuple of two functions → Stereo
-// For any single function/closure that can be turned into a SynthFunc
+/// Into a SpeakerDef::Mono for a single AudioUnit
 impl<F> IntoSpeakerDef for F
 where
     F: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
 {
     fn into_speaker_def(self) -> SpeakerDef {
-        SpeakerDef::Mono(Arc::new(self)) // wrap into SynthFunc
+        SpeakerDef::Mono(Arc::new(self))
     }
 }
 
-// For a tuple of two such functions – stereo definition
+/// Return an owned SpeakerDef::Stereo and for a tuple of AudioUnits
 impl<L, R> IntoSpeakerDef for (L, R)
 where
     L: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
@@ -60,8 +57,11 @@ where
         }
     }
 }
+
+/// convenience type for a Program Table item with name and SpeakerDef.
 pub type ProgramTableItem = (String, SpeakerDef);
 
+/// Struct containing all the entries from which you can choose your synths.
 pub struct ProgramTable {
     pub entries: Vec<ProgramTableItem>,
 }
@@ -71,6 +71,7 @@ impl ProgramTable {
         Self { entries }
     }
 
+    /// Return an owned mono-representation of all the synths inside a program table
     pub fn to_iter_mono(&self) -> impl Iterator<Item = (&str, SynthFunc)> {
         self.entries.iter().map(|(name, def)| {
             let func = match def {

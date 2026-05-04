@@ -7,7 +7,7 @@ use fundsp::prelude::{
 };
 use fundsp::prelude64::{
     adsr_live, clip, constant, dsf_saw, dsf_square, follow, highpass_hz, lowpass_q, organ, product,
-    pulse, saw, shared, sine, soft_saw, square, triangle, var,
+    pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var,
 };
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
@@ -292,6 +292,12 @@ fn basic_pluck() -> Box<dyn AudioUnit> {
     Box::new((square() & saw()) >> lowpass_hz::<f32>(3000.0, 0.5))
 }
 
+fn guitarish_pitched(pitch: Net) -> Net {
+    Net::stack(pitch, Net::wrap(Box::new(var(&shared(0.3)))))
+        >> pulse()
+        >> lowpass_hz::<f32>(3000.0, 0.5)
+}
+
 /// An attempt at an acoustic-guitar inspired sound.
 pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
@@ -306,7 +312,35 @@ pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
 
-/// Something between a celesta and a prepared-piano with filter cutoff mapped to specified midi CC constant 
+pub fn wide_chorus_guitarish_l(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.005,
+        decay: 1.0,
+        sustain: 0.0,
+        release: 0.6,
+    };
+    let base_pitch = state.bent_pitch();
+    let lfo = sine_hz(3.5) * 0.0065;
+    let pitch = base_pitch.clone() * (constant(1.0) + lfo);
+    let g = guitarish_pitched(pitch);
+    state.assemble_pitched_sound(Box::new(g), adsr.boxed(state))
+}
+
+pub fn wide_chorus_guitarish_r(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.007,
+        decay: 1.05,
+        sustain: 0.0,
+        release: 0.65,
+    };
+    let base_pitch = state.bent_pitch();
+    let lfo = sine_hz(3.0) * 0.0165;
+    let pitch = base_pitch.clone() * (constant(1.0) + lfo);
+    let g = guitarish_pitched(pitch);
+    state.assemble_pitched_sound(Box::new(g), adsr.boxed(state))
+}
+
+/// Something between a celesta and a prepared-piano with filter cutoff mapped to specified midi CC constant
 pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let synth_adsr = Adsr {
         attack: 0.002,
