@@ -1,3 +1,4 @@
+use crate::sound_builders::SpeakerDef;
 use crate::{
     NUM_MIDI_VALUES, SharedMidiState, SynthFunc, control_change_from, note_velocity_from,
     sound_builders::ProgramTable,
@@ -269,14 +270,25 @@ impl Speaker {
 }
 
 struct StereoPlayer<const N: usize> {
-    sounds: [MonoPlayer<N>; 2],
+    sounds: [SingleSpeakerPlayer<N>; 2],
+}
+
+fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
+    match def {
+        SpeakerDef::Mono(v) => v,
+        SpeakerDef::Stereo { right, left } => match speaker {
+            Speaker::Left => left,
+            Speaker::Right => right,
+            Speaker::Both => unreachable!(),
+        },
+    }
 }
 
 impl<const N: usize> StereoPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
         let sounds = [
-            MonoPlayer::<N>::new(program_table.clone()),
-            MonoPlayer::<N>::new(program_table),
+            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left),
+            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right),
         ];
         Self { sounds }
     }
@@ -466,7 +478,7 @@ enum RelayedMessage {
 }
 
 #[derive(Clone)]
-struct MonoPlayer<const N: usize> {
+struct SingleSpeakerPlayer<const N: usize> {
     states: [SharedMidiState; N],
     next: ModNumC<usize, N>,
     pitch2state: [Option<usize>; NUM_MIDI_VALUES],
@@ -474,19 +486,21 @@ struct MonoPlayer<const N: usize> {
     synth_func: SynthFunc,
     master_volume: Shared,
     program_table: Arc<Mutex<ProgramTable>>,
+    speaker: Speaker,
 }
 
-impl<const N: usize> MonoPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
+impl<const N: usize> SingleSpeakerPlayer<N> {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker) -> Self {
         let synth_func = {
             let program_table = program_table.lock().unwrap();
-            program_table[0].1.clone()
+            def_to_synth(&speaker, program_table.entries[0].1.clone())
         };
         Self {
             states: [(); N].map(|_| SharedMidiState::default()),
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
             recent_pitches: [None; N],
+            speaker,
             synth_func,
             master_volume: shared(1.0),
             program_table,
@@ -528,11 +542,11 @@ impl<const N: usize> MonoPlayer<N> {
                     self.bend(*bend);
                 }
                 ChannelVoiceMsg::ProgramChange { program } => {
-                    let new_synth = {
+                    let def = {
                         let program_table = self.program_table.lock().unwrap();
-                        program_table[*program as usize].1.clone()
+                        program_table.entries[*program as usize].1.clone()
                     };
-                    self.change_synth(new_synth);
+                    self.change_synth(def);
                     return Some(RelayedMessage::SynthChange);
                 }
                 ChannelVoiceMsg::ControlChange {
@@ -593,9 +607,9 @@ impl<const N: usize> MonoPlayer<N> {
         }
     }
 
-    fn change_synth(&mut self, new_synth: SynthFunc) {
+    fn change_synth(&mut self, def: SpeakerDef) {
         self.all_sounds_off();
-        self.synth_func = new_synth;
+        self.synth_func = def_to_synth(&self.speaker, def);
     }
 
     fn bend(&mut self, bend: u16) {
