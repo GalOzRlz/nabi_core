@@ -35,7 +35,7 @@ pub fn options() -> ProgramTable {
         ("Clavichord (Sharp)", clavichord_sharp),
         ("Clavichord (Soft)", clavichord_soft),
         ("Guitar-ish", guitarish),
-        ("Music Box", music_box)
+        ("Music Box", music_box::<74>)
     ]
 }
 
@@ -309,7 +309,8 @@ pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 }
 
 /// Something between a celesta and a prepared-piano with filter cutoff mapped to midi CC 74
-pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+pub fn music_box<const C: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    println!("Music Box");
     let synth_adsr = Adsr {
         attack: 0.002,
         decay: 0.0,
@@ -341,7 +342,8 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
         & (0.1 * resonator_hz(550.0, 15.0));
 
     // set cutoff stream with smoothing
-    let cutoff_val = state.control_change_var(74);
+    let cutoff_val = state.control_change_var(C);
+    println!("cutoff_val: {}", cutoff_val.value());
     let max_cutoff_hz = 5_000.0;
     let combined = tone >> body >> highpass_hz(30.0, 0.7) * db_amp(-4.0);
     let cutoff_hrz = product(constant(max_cutoff_hz / 127.0), cutoff_val);
