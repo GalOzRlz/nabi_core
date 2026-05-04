@@ -28,8 +28,8 @@
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
 //! * [`cc_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/cc_demo.rs) demonstrates
-//! the use of a sound with properties altered by a MIDI Control Change message. The Control Change channel 
-//! is specified by a generic constant for the `MusicBox` sound type. (It is set at 7 in this example because that is a 
+//! the use of a sound with properties altered by a MIDI Control Change message. The Control Change channel
+//! is specified by a generic constant for the `MusicBox` sound type. (It is set at 7 in this example because that is a
 //! convenient Control Change channel for my own MIDI keyboard.) This illustrates how to build and employ
 //! sounds using MIDI Control Change for any application you might imagine.
 

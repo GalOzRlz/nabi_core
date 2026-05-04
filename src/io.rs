@@ -273,6 +273,7 @@ struct StereoPlayer<const N: usize> {
     sounds: [SingleSpeakerPlayer<N>; 2],
 }
 
+/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
 fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
     match def {
         SpeakerDef::Mono(v) => v,
