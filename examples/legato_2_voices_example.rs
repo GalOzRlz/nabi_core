@@ -15,7 +15,7 @@ use midi_fundsp::io::start_midi_output_thread;
 
 fn main() -> anyhow::Result<()> {
     let mut config = Config::default();
-    config.voice_stealing = VoiceStealingConfig::Latest;
+    config.voice_stealing = VoiceStealingConfig::Last;
     let mut midi_in = MidiInput::new("midir reading input")?;
     let in_port = get_first_midi_device(&mut midi_in)?;
     let midi_msgs = Arc::new(SegQueue::new());

@@ -2,7 +2,7 @@
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum VoiceStealingConfig {
     Oldest,
-    Latest,
+    Last,
 }
 
 /// Configuration block for extra features

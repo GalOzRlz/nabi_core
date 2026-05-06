@@ -589,7 +589,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
         }
         self.next = match self.config.voice_stealing {
             VoiceStealingConfig::Oldest => self.next,
-            VoiceStealingConfig::Latest => ModNumC::new(self.next.a() + (N -1))
+            VoiceStealingConfig::Last => ModNumC::new(self.next.a() + (N -1))
         };
         self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
         self.release(self.next.a());
