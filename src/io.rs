@@ -1,29 +1,29 @@
 use crate::sound_builders::SpeakerDef;
 use crate::{
-    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, control_change_from, note_velocity_from,
-    sound_builders::ProgramTable,
+    control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
+    NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig,
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use fundsp::prelude::{multipass, U2};
+use fundsp::prelude64::{reverb_stereo, split};
 use fundsp::{
     net::Net,
-    prelude::{AudioUnit, FrameAdd, FrameMul},
+    prelude::AudioUnit,
     prelude64::{shared, var},
     shared::Shared,
 };
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use read_input::{InputBuild, shortcut::input};
+use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use fundsp::prelude::{multipass, reverb2_stereo, U2};
-use fundsp::prelude64::{lowpole_hz, reverb_stereo, split};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -188,6 +188,7 @@ pub fn start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
 ) {
+    // todo: read config and decide which player to use
     std::thread::spawn(move || {
         let mut player = StereoPlayer::<N>::new(program_table);
         player.run_output(midi_msgs).unwrap();
@@ -256,6 +257,18 @@ fn inner_start_output_thread<const N: usize>(
     });
 }
 
+fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
+    match def {
+        SpeakerDef::Stereo(v) => v,
+        SpeakerDef::LR { right, left } => match speaker {
+            Speaker::Left => left,
+            Speaker::Right => right,
+            Speaker::Both => panic!("You require a L/R sound engine (different synth function for L/R) but also asked for a true stereo setup:\
+             either provide a SpeakerDef::Stereo enum or change the player configuration to LRPlayer"),
+        },
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Represents whether a sound should go to the left, right, or both speakers.
 pub enum Speaker {
@@ -270,38 +283,13 @@ impl Speaker {
         *self as usize
     }
 }
+trait DubleSpeaker<const N: usize> {
 
-struct StereoPlayer<const N: usize> { // todo: Make LR player and StereoPlayer with shared methods
-    center_player: SingleSpeakerPlayer<N>
-}
+    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self;
 
-/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
-fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
-    match def {
-        SpeakerDef::Mono(v) => v,
-        SpeakerDef::Stereo { right, left } => match speaker {
-            Speaker::Left => left,
-            Speaker::Right => right,
-            Speaker::Both => unreachable!(),
-        },
-    }
-}
+    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
-impl<const N: usize> StereoPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
-        let center_player =
-            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Both);
-        Self { center_player }
-    }
-
-    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
-        self.center_player.set_midi_to_hz(midi_to_hz);
-    }
-
-    fn sound(&self) -> Net {
-        self.center_player.sound()
-    }
-
+    fn sound(&self) -> Net;
 
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
         let host = cpal::default_host();
@@ -317,10 +305,7 @@ impl<const N: usize> StereoPlayer<N> {
         }
     }
 
-    fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
-        self.center_player.decode(msg)
-    }
-
+    fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage>;
     fn run_synth<T: Sample + SizedSample + FromSample<f32>>(
         &mut self,
         midi_msgs: Arc<SegQueue<SynthMsg>>,
@@ -395,6 +380,76 @@ impl<const N: usize> StereoPlayer<N> {
             )
             .or_else(|err| bail!("{err:?}"))
     }
+
+}
+
+struct StereoPlayer<const N: usize> {
+    center_source: SingleSpeakerPlayer<N>
+}
+
+struct LRPlayer<const N: usize> {
+    sounds: [SingleSpeakerPlayer<N>; 2],
+}
+/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
+
+impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
+    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
+        let center_source =
+            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Both);
+        Self { center_source }
+    }
+
+    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
+        self.center_source.set_midi_to_hz(midi_to_hz);
+    }
+
+    fn sound(&self) -> Net {
+        self.center_source.sound()
+    }
+
+    fn decode(&mut self, _speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
+        let result = None;
+        result.or(self.center_source.decode(msg))
+    }
+}
+
+impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
+    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
+        let sounds = [
+            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left),
+            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right),
+        ];
+        Self { sounds }
+    }
+
+    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
+        for i in 0..self.sounds.len() {
+            self.sounds[i].set_midi_to_hz(midi_to_hz);
+        }
+    }
+
+    fn sound(&self) -> Net {
+        Net::stack(
+            self.sounds[Speaker::Left.i()].sound(),
+            self.sounds[Speaker::Right.i()].sound(),
+        )
+    }
+
+    fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
+        match speaker {
+            Speaker::Left | Speaker::Right => self.sounds[speaker.i()].decode(msg),
+            Speaker::Both => {
+                let mut result = None;
+                for sound in self.sounds.iter_mut() {
+                    result = result.or(sound.decode(msg));
+                }
+                result
+            }
+        }
+    }
+
+
+
 }
 
 /// Presents a list of items to be selected via console input. Used in multiple
