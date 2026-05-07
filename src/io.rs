@@ -612,7 +612,6 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
         self.next = match self.config.voice_stealing {
             VoiceStealingConfig::LegatoOldest => self.next,
             VoiceStealingConfig::LegatoLast => ModNumC::new(self.next.a() + (N -1)),
-            VoiceStealingConfig::LastRetrigger | VoiceStealingConfig::OldestRetrigger => todo!()
         };
         self.claim_state(self.next)
     }

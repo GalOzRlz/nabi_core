@@ -1,19 +1,14 @@
 /// Determines the voice stealing strategy:
 /// LegatoOldest: Keep envelope and steal the oldest voice
 /// LegatoLast: either oldest or latest voice
-/// LastRetrigger: steal last voice and re-trigger current
-/// OldestRetrigger: steal latest voice and re-trigger current
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum VoiceStealingConfig {
     LegatoOldest,
     LegatoLast,
-    OldestRetrigger,
-    LastRetrigger,
-    // todo: quietest?
 }
 
-/// determine if voices are freed by instrument ADSR or by being at zero volume
-/// release on zero is a bit costlier but allows for 0.0 release sounds to play more naturally
+/// Determine if voices are freed from current voices queue by instrument ADSR or by being at zero volume.
+/// Release on zero is a bit costlier but allows for 0.0 release sounds to play better.
  #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FreeVoiceStrategy {
     FollowADSR,
