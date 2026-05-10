@@ -26,7 +26,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             voice_stealing: VoiceStealingConfig::LegatoOldest,
-            voice_release: FreeVoiceStrategy::FollowADSR,
+            voice_release: FreeVoiceStrategy::ReleaseOnZero,
         }
     }
+
 }
