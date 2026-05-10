@@ -14,7 +14,7 @@ use cpal::{
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use fundsp::prelude::U2;
-use fundsp::prelude64::split;
+use fundsp::prelude64::{constant, product, split};
 use fundsp::{
     net::Net,
     prelude::AudioUnit,
@@ -183,7 +183,7 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
     midi_msgs: Arc<SegQueue<M>>,
 ) -> impl Fn(u64, &[u8], &mut ()) {
     move |_stamp, message, _| {
-        let (msg, _len) = MidiMsg::from_midi(&message).unwrap();
+        let (msg, _len) = MidiMsg::from_midi(message).unwrap();
         midi_msgs.push(encoder(msg));
     }
 }
@@ -203,7 +203,7 @@ pub fn start_output_thread<const N: usize>(
     program_table: Arc<Mutex<ProgramTable>>,
     config: Option<Config>,
 ) {
-    let cnf = config.unwrap_or_else(|| Config::default());
+    let cnf = config.unwrap_or_default();
     std::thread::spawn(move || {
         let mut player = StereoPlayer::<N>::new(program_table, cnf);
         player.run_output(midi_msgs).unwrap();
@@ -225,7 +225,7 @@ pub fn start_midi_output_thread<const N: usize>(
     program_table: Arc<Mutex<ProgramTable>>,
     config: Option<Config>,
 ) {
-    let cnf = config.unwrap_or_else(|| Config::default());
+    let cnf = config.unwrap_or_default();
     inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(program_table, cnf));
 }
 
@@ -248,7 +248,7 @@ pub fn start_midi_output_thread_alt_tuning<const N: usize>(
     midi_to_hz: fn(f32) -> f32,
     config: Option<Config>,
 ) {
-    let cnf = config.unwrap_or_else(|| Config::default());
+    let cnf = config.unwrap_or_default();
     let mut player = StereoPlayer::<N>::new(program_table, cnf);
     player.set_midi_to_hz(midi_to_hz);
     inner_start_output_thread(midi_msgs, player);
@@ -356,11 +356,10 @@ trait DubleSpeaker<const N: usize> {
 
     fn handle_messages(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> RelayedMessage {
         loop {
-            if let Some(msg) = midi_msgs.pop() {
-                if let Some(relayed) = self.decode(msg.speaker, &msg.msg) {
+            if let Some(msg) = midi_msgs.pop()
+                && let Some(relayed) = self.decode(msg.speaker, &msg.msg) {
                     return relayed;
                 }
-            }
         }
     }
 
@@ -378,7 +377,7 @@ trait DubleSpeaker<const N: usize> {
         let err_fn = |err| eprintln!("Error on stream: {err}");
         device
             .build_output_stream(
-                &config,
+                config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     write_data(data, channels, &mut next_value)
                 },
@@ -434,7 +433,7 @@ pub fn console_choice_from<T, F: Fn(&T) -> &str>(
 pub fn get_first_midi_device(midi_in: &mut MidiInput) -> anyhow::Result<MidiInputPort> {
     midi_in.ignore(Ignore::None);
     let in_ports = midi_in.ports();
-    if in_ports.len() == 0 {
+    if in_ports.is_empty() {
         bail!("No MIDI devices attached")
     } else {
         let device_name = midi_in.port_name(&in_ports[0])?;
@@ -513,7 +512,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             synth_func,
             master_volume: shared(1.0),
             program_table,
-            config
+            config,
         }
     }
 
@@ -544,8 +543,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
         let mix = match sound.outputs() {
             1 => {
-                let vol = var(&self.master_volume) >> split::<U2>();
-                sound * vol
+                (sound * var(&self.master_volume)) >> split::<U2>() 
             }
             2 => {
                 let vol = var(&self.master_volume);
@@ -553,7 +551,9 @@ impl<const N: usize> SingleSourcePlayer<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
-        mix >> master_reverb(0.5)
+        let cutoff_val = self.states[0].control_change_var(74);
+        let wet = product(constant(1.0 / 127.0), cutoff_val);
+        (mix | wet ) >> master_reverb(2.5)
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -594,10 +594,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 ChannelModeMsg::AllSoundOff => self.all_sounds_off(),
                 _ => {}
             },
-            MidiMsg::SystemRealTime { msg } => match msg {
-                SystemRealTimeMsg::SystemReset => return Some(RelayedMessage::SystemReset),
-                _ => {}
-            },
+            MidiMsg::SystemRealTime { msg } => if msg == &SystemRealTimeMsg::SystemReset { return Some(RelayedMessage::SystemReset) },
             _ => {}
         }
         None

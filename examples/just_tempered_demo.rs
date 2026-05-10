@@ -11,6 +11,7 @@ use midi_fundsp::{
 };
 use midir::MidiInput;
 use read_input::{InputBuild, shortcut::input};
+use midi_fundsp::sounds::moogs;
 
 fn main() -> anyhow::Result<()> {
     let mut midi_in = MidiInput::new("midir reading input")?;
@@ -20,7 +21,7 @@ fn main() -> anyhow::Result<()> {
     start_midi_input_thread(midi_msgs.clone(), midi_in, in_port, quit.clone());
     start_midi_output_thread_alt_tuning::<10>(
         midi_msgs,
-        Arc::new(Mutex::new(program_table![("Music Box", music_box::<7>)])),
+        Arc::new(Mutex::new(moogs())),
         just_intonation,
         None
     );
