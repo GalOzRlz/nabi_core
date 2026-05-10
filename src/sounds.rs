@@ -6,7 +6,7 @@ use fundsp::prelude::{
     resonator_hz,
 };
 use fundsp::prelude64::{
-    adsr_live, clip, constant, dsf_saw, dsf_square, follow, highpass_hz, lowpass_q, organ, product,
+    adsr_live, constant, dsf_saw, dsf_square, highpass_hz, organ,
     pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var,
 };
 use crate::effects::simple_lowpass;
