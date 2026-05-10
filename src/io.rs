@@ -14,7 +14,7 @@ use cpal::{
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use fundsp::prelude::U2;
-use fundsp::prelude64::{constant, product, split};
+use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
     prelude::AudioUnit,
@@ -551,9 +551,20 @@ impl<const N: usize> SingleSourcePlayer<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
+        println!("=== Sound function called ===");
+
         let cutoff_val = self.states[0].control_change_var(74);
-        let wet = product(constant(1.0 / 127.0), cutoff_val);
-        (mix | wet ) >> master_reverb(2.5)
+        let value = cutoff_val.value();
+
+
+        eprintln!("CC74 value (stderr): {}", value);  // Use stderr
+        println!("CC74 value (stdout): {}", value);   // Use stdout
+
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+        let cutoff_val = self.states[0].control_change_var(74);
+        println!("{}", cutoff_val.value());
+        mix >> master_reverb(cutoff_val.value() / 127.0)
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
