@@ -2,15 +2,15 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use midi_fundsp::sound_builders::*;
+use midi_fundsp::sounds::moogs;
 use midi_fundsp::{
-    io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning},
-    program_table,
-    sounds::music_box,
+    io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning}
+
+    ,
     tunings::just_intonation,
 };
 use midir::MidiInput;
-use read_input::{InputBuild, shortcut::input};
+use read_input::{shortcut::input, InputBuild};
 
 fn main() -> anyhow::Result<()> {
     let mut midi_in = MidiInput::new("midir reading input")?;
@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     start_midi_input_thread(midi_msgs.clone(), midi_in, in_port, quit.clone());
     start_midi_output_thread_alt_tuning::<10>(
         midi_msgs,
-        Arc::new(Mutex::new(program_table![("Music Box", music_box::<7>)])),
+        Arc::new(Mutex::new(moogs())),
         just_intonation,
         None
     );

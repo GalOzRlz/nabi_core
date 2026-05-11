@@ -22,11 +22,11 @@ macro_rules! program_table {
 /// Maximum number of entries controllable via MIDI messages in a MIDI program table.
 pub const NUM_PROGRAM_SLOTS: usize = 2_usize.pow(7);
 
-/// A Speaker Definition enum to handle Mono instruments or Split R/L instruments.
+/// A Speaker Definition enum to handle either separate L/R output or true stereo instruments (i.e., with U2 outputs).
 #[derive(Clone)]
 pub enum SpeakerDef {
-    Mono(SynthFunc),
-    Stereo { left: SynthFunc, right: SynthFunc },
+    Stereo(SynthFunc),
+    LR { left: SynthFunc, right: SynthFunc },
 }
 
 /// A Trait to turn an AudioUnit or a tuple of AudioUnit into a SpeakerDef containing SynthFunc(s).
@@ -34,24 +34,24 @@ pub trait IntoSpeakerDef {
     fn into_speaker_def(self) -> SpeakerDef;
 }
 
-/// Into a SpeakerDef::Mono for a single AudioUnit
+/// Into a SpeakerDef::Stereo for a single AudioUnit
 impl<F> IntoSpeakerDef for F
 where
     F: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
 {
     fn into_speaker_def(self) -> SpeakerDef {
-        SpeakerDef::Mono(Arc::new(self))
+        SpeakerDef::Stereo(Arc::new(self))
     }
 }
 
-/// Return an owned SpeakerDef::Stereo and for a tuple of AudioUnits
+/// Return an owned SpeakerDef::LR and for a tuple of AudioUnits
 impl<L, R> IntoSpeakerDef for (L, R)
 where
     L: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
     R: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
 {
     fn into_speaker_def(self) -> SpeakerDef {
-        SpeakerDef::Stereo {
+        SpeakerDef::LR {
             left: Arc::new(self.0),
             right: Arc::new(self.1),
         }
@@ -75,8 +75,8 @@ impl ProgramTable {
     pub fn to_iter_mono(&self) -> impl Iterator<Item = (&str, SynthFunc)> {
         self.entries.iter().map(|(name, def)| {
             let func = match def {
-                SpeakerDef::Mono(f) => f,
-                SpeakerDef::Stereo { left, .. } => left,
+                SpeakerDef::Stereo(f) => f,
+                SpeakerDef::LR { left, .. } => left,
             };
             (name.as_str(), func.clone())
         })

@@ -1,28 +1,31 @@
+use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
+use crate::effects::master_reverb;
 use crate::sound_builders::SpeakerDef;
 use crate::{
-    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, control_change_from, note_velocity_from,
-    sound_builders::ProgramTable,
+    control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
+    NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig,
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use fundsp::prelude::U2;
+use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
-    prelude::{AudioUnit, FrameAdd, FrameMul},
+    prelude::AudioUnit,
     prelude64::{shared, var},
     shared::Shared,
 };
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use read_input::{InputBuild, shortcut::input};
+use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -84,6 +87,18 @@ impl SynthMsg {
     /// Returns a control message index and its value
     pub fn control_change(&self) -> Option<(u8, u8)> {
         control_change_from(&self.msg)
+    }
+}
+
+/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
+fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
+    match def {
+        SpeakerDef::Stereo(v) => v,
+        SpeakerDef::LR { right, left } => match speaker {
+            Speaker::Left => left,
+            Speaker::Right => right,
+            Speaker::Both => unreachable!(),
+        },
     }
 }
 
@@ -168,7 +183,7 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
     midi_msgs: Arc<SegQueue<M>>,
 ) -> impl Fn(u64, &[u8], &mut ()) {
     move |_stamp, message, _| {
-        let (msg, _len) = MidiMsg::from_midi(&message).unwrap();
+        let (msg, _len) = MidiMsg::from_midi(message).unwrap();
         midi_msgs.push(encoder(msg));
     }
 }
@@ -188,8 +203,9 @@ pub fn start_output_thread<const N: usize>(
     program_table: Arc<Mutex<ProgramTable>>,
     config: Option<Config>,
 ) {
+    let cnf = config.unwrap_or_default();
     std::thread::spawn(move || {
-        let mut player = StereoPlayer::<N>::new(program_table, config);
+        let mut player = StereoPlayer::<N>::new(program_table, cnf);
         player.run_output(midi_msgs).unwrap();
     });
 }
@@ -209,7 +225,8 @@ pub fn start_midi_output_thread<const N: usize>(
     program_table: Arc<Mutex<ProgramTable>>,
     config: Option<Config>,
 ) {
-    inner_start_output_thread(midi_msgs,  StereoPlayer::<N>::new(program_table, config));
+    let cnf = config.unwrap_or_default();
+    inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(program_table, cnf));
 }
 
 /// Plays sounds according to `MidiMsg` objects received in the `midi_msgs` queue. Synthesizer sounds may be selected with
@@ -231,7 +248,8 @@ pub fn start_midi_output_thread_alt_tuning<const N: usize>(
     midi_to_hz: fn(f32) -> f32,
     config: Option<Config>,
 ) {
-    let mut player =  StereoPlayer::<N>::new(program_table, config);
+    let cnf = config.unwrap_or_default();
+    let mut player = StereoPlayer::<N>::new(program_table, cnf);
     player.set_midi_to_hz(midi_to_hz);
     inner_start_output_thread(midi_msgs, player);
 }
@@ -258,18 +276,6 @@ fn inner_start_output_thread<const N: usize>(
     });
 }
 
-/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
-fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
-    match def {
-        SpeakerDef::Mono(v) => v,
-        SpeakerDef::Stereo { right, left } => match speaker {
-            Speaker::Left => left,
-            Speaker::Right => right,
-            Speaker::Both => unreachable!(),
-        },
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Represents whether a sound should go to the left, right, or both speakers.
 pub enum Speaker {
@@ -284,33 +290,14 @@ impl Speaker {
         *self as usize
     }
 }
+trait DubleSpeaker<const N: usize> {
 
-struct StereoPlayer<const N: usize> {
-    sounds: [SingleSpeakerPlayer<N>; 2],
-}
+    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self;
 
-impl<const N: usize> StereoPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Option<Config>) -> Self {
-        let config = config.unwrap_or_else(|| Config::default());
-        let sounds = [
-            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left, config.clone()),
-            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right, config.clone()),
-        ];
-        Self { sounds }
-    }
+    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
-    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
-        for i in 0..self.sounds.len() {
-            self.sounds[i].set_midi_to_hz(midi_to_hz);
-        }
-    }
+    fn sound(&mut self) -> Net;
 
-    fn sound(&mut self) -> Net {
-        Net::stack(
-            self.sounds[Speaker::Left.i()].sound(),
-            self.sounds[Speaker::Right.i()].sound(),
-        )
-    }
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
         let host = cpal::default_host();
         let device = host
@@ -325,19 +312,7 @@ impl<const N: usize> StereoPlayer<N> {
         }
     }
 
-    fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
-        match speaker {
-            Speaker::Left | Speaker::Right => self.sounds[speaker.i()].decode(msg),
-            Speaker::Both => {
-                let mut result = None;
-                for sound in self.sounds.iter_mut() {
-                    result = result.or(sound.decode(msg));
-                }
-                result
-            }
-        }
-    }
-
+    fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage>;
     fn run_synth<T: Sample + SizedSample + FromSample<f32>>(
         &mut self,
         midi_msgs: Arc<SegQueue<SynthMsg>>,
@@ -381,11 +356,10 @@ impl<const N: usize> StereoPlayer<N> {
 
     fn handle_messages(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> RelayedMessage {
         loop {
-            if let Some(msg) = midi_msgs.pop() {
-                if let Some(relayed) = self.decode(msg.speaker, &msg.msg) {
+            if let Some(msg) = midi_msgs.pop()
+                && let Some(relayed) = self.decode(msg.speaker, &msg.msg) {
                     return relayed;
                 }
-            }
         }
     }
 
@@ -403,7 +377,7 @@ impl<const N: usize> StereoPlayer<N> {
         let err_fn = |err| eprintln!("Error on stream: {err}");
         device
             .build_output_stream(
-                &config,
+                config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                     write_data(data, channels, &mut next_value)
                 },
@@ -413,9 +387,31 @@ impl<const N: usize> StereoPlayer<N> {
             .or_else(|err| bail!("{err:?}"))
     }
 
-    pub fn set_new_config(&mut self, config: Config) {
-        self.sounds[Speaker::Right.i()].set_new_config(config.clone());
-        self.sounds[Speaker::Left.i()].set_new_config(config);
+}
+
+/// The default player that has one stereo stream in and one out (U2 inputs, U2 outputs)
+struct StereoPlayer<const N: usize> {
+    center_source: SingleSourcePlayer<N>,
+}
+
+impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
+        let center_source =
+            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Both, config);
+        Self { center_source }
+    }
+
+    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
+        self.center_source.set_midi_to_hz(midi_to_hz);
+    }
+
+    fn sound(&mut self) -> Net {
+        self.center_source.sound()
+    }
+
+    fn decode(&mut self, _speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
+        let result = None;
+        result.or(self.center_source.decode(msg))
     }
 }
 
@@ -437,7 +433,7 @@ pub fn console_choice_from<T, F: Fn(&T) -> &str>(
 pub fn get_first_midi_device(midi_in: &mut MidiInput) -> anyhow::Result<MidiInputPort> {
     midi_in.ignore(Ignore::None);
     let in_ports = midi_in.ports();
-    if in_ports.len() == 0 {
+    if in_ports.is_empty() {
         bail!("No MIDI devices attached")
     } else {
         let device_name = midi_in.port_name(&in_ports[0])?;
@@ -487,8 +483,9 @@ enum RelayedMessage {
     SystemReset,
 }
 
+/// Single sound emitter that decodes midi and manages voices - used by StereoPlayer and LRPlayer to manage output.
 #[derive(Clone)]
-struct SingleSpeakerPlayer<const N: usize> {
+struct SingleSourcePlayer<const N: usize> {
     states: [SharedMidiState; N],
     next: ModNumC<usize, N>,
     pitch2state: [Option<usize>; NUM_MIDI_VALUES],
@@ -497,10 +494,14 @@ struct SingleSpeakerPlayer<const N: usize> {
     master_volume: Shared,
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
-    config: Config
+    config: Config,
+    global_fx_cc_idx_1: usize,
+    global_fx_cc_idx_2: usize,
+    eq_low_cc_idx: usize,
+    eq_high_cc_idx: usize,
 }
 
-impl<const N: usize> SingleSpeakerPlayer<N> {
+impl<const N: usize> SingleSourcePlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker, config: Config) -> Self {
         let synth_func = {
             let program_table = program_table.lock().unwrap();
@@ -513,9 +514,13 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
             recent_pitches: [None; N],
             speaker,
             synth_func,
-            master_volume: shared(1.0),
+            master_volume: shared(0.5),
             program_table,
-            config,
+            config: config.clone(),
+            global_fx_cc_idx_1: config.cc_1,
+            global_fx_cc_idx_2: config.cc_2,
+            eq_low_cc_idx: config.cc_3,
+            eq_high_cc_idx: config.cc_4,
         }
     }
 
@@ -523,10 +528,6 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
         for i in 0..self.states.len() {
             self.states[i].set_midi_to_hz(midi_to_hz);
         }
-    }
-
-    fn set_new_config(&mut self, new_config: Config) {
-        self.config = new_config;
     }
 
     fn nullify_zero_value_notes(&mut self, sound: &mut Net, i:usize) -> bool {
@@ -543,16 +544,25 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
             self.nullify_zero_value_notes(&mut sound, 0);
         }
         for i in 1..N {
-            sound = Net::binary(sound, Net::wrap(self.sound_at(i)), FrameAdd::new());
+            sound = sound + Net::wrap(self.sound_at(i));
             if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
-                self.nullify_zero_value_notes(&mut sound, 0);
+                self.nullify_zero_value_notes(&mut sound, i);
             }
         }
-        Net::binary(
-            sound,
-            Net::wrap(Box::new(var(&self.master_volume))),
-            FrameMul::new(),
-        )
+        let mix = match sound.outputs() {
+            1 => {
+                (sound * var(&self.master_volume)) >> split::<U2>() 
+            }
+            2 => {
+                let vol = var(&self.master_volume);
+                sound * vol
+            }
+            _ => panic!("Unsupported output count on synth! use either U1 or U2"),
+        };
+        println!("=== Sound function called ===");
+
+        let reverb_amount: Net = Net::wrap(Box::new(var(&self.states[0].control_change[self.global_fx_cc_idx_1].clone())));
+        mix >> master_reverb(reverb_amount) // todo: add 2-banded eq > limiter/clipper > normalizer > reverb, make this into a function player holds?
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -583,9 +593,8 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
                     control: CC { control, value },
                 } => {
                     for state in self.states.iter_mut() {
-                        state.set_control_change(*control, *value);
+                        state.set_control_change(*control, *value as f32 / 127.0);
                     }
-                    // return Some(RelayedMessage::SynthChange);
                 }
                 _ => {}
             },
@@ -594,10 +603,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
                 ChannelModeMsg::AllSoundOff => self.all_sounds_off(),
                 _ => {}
             },
-            MidiMsg::SystemRealTime { msg } => match msg {
-                SystemRealTimeMsg::SystemReset => return Some(RelayedMessage::SystemReset),
-                _ => {}
-            },
+            MidiMsg::SystemRealTime { msg } => if msg == &SystemRealTimeMsg::SystemReset { return Some(RelayedMessage::SystemReset) },
             _ => {}
         }
         None
@@ -611,7 +617,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
         }
         self.next = match self.config.voice_stealing {
             VoiceStealingConfig::LegatoOldest => self.next,
-            VoiceStealingConfig::LegatoLast => ModNumC::new(self.next.a() + (N -1)),
+            VoiceStealingConfig::LegatoLast => ModNumC::new(self.next.a() + (N - 1)),
         };
         self.claim_state(self.next)
     }
