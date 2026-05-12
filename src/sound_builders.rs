@@ -1,12 +1,8 @@
-use fundsp::{
-    math::{clamp01, xerp},
-    net::Net,
-    prelude::AudioUnit,
-    prelude64::{adsr_live, envelope2, moog_q},
-};
-use std::sync::Arc;
-
 use crate::{SharedMidiState, SynthFunc};
+use fundsp::prelude::lowpass_q;
+use fundsp::prelude64::pass;
+use fundsp::{math::{clamp01, xerp}, net::Net, prelude::AudioUnit, prelude64::{adsr_live, envelope2, moog_q}};
+use std::sync::Arc;
 
 #[macro_export]
 /// Convenience macro to build a `ProgramTable` struct. Given a sequence of tuples of `&str` objects
@@ -71,16 +67,6 @@ impl ProgramTable {
         Self { entries }
     }
 
-    /// Return an owned mono-representation of all the synths inside a program table
-    pub fn to_iter_mono(&self) -> impl Iterator<Item = (&str, SynthFunc)> {
-        self.entries.iter().map(|(name, def)| {
-            let func = match def {
-                SpeakerDef::Stereo(f) => f,
-                SpeakerDef::LR { left, .. } => left,
-            };
-            (name.as_str(), func.clone())
-        })
-    }
 }
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.
@@ -122,9 +108,15 @@ impl Adsr {
         )
     }
 
+    pub fn lfo_lowpass(&self, lfo: Net, q:f32, cutoff: Net) -> Net {
+        (pass() | lfo * cutoff) >> lowpass_q(q)
+    }
+
+    // todo: envelop with adsr
+
     /// Stacks `source` with an ADSR that is piped into an exponential interpolator.
     /// Thes two stacked inputs are then piped into a Moog filter.
-    pub fn timed_moog(&self, source: Box<dyn AudioUnit>, state: &SharedMidiState) -> Net {
+    pub fn ad_moog_lowpass(&self, source: Box<dyn AudioUnit>, state: &SharedMidiState) -> Net {
         Net::pipe(
             Net::stack(
                 Net::wrap(source),

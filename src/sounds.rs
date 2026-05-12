@@ -132,7 +132,7 @@ pub fn adsr_dsf_square(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 /// Pulse wave through a Moog filter modulated by an ADSR.
 pub fn moog_pulse(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_pitched_sound(
-        Box::new(ADSR2.timed_moog(
+        Box::new(ADSR2.ad_moog_lowpass(
             Box::new(ADSR2.timed_sound(Box::new(pulse() * 4.5), state)),
             state,
         )),
@@ -143,7 +143,7 @@ pub fn moog_pulse(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 /// Square wave through a Moog filter modulated by an ADSR.
 pub fn moog_square(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_unpitched_sound(
-        Box::new(ADSR2.timed_moog(Box::new(square() * 5.625), state)),
+        Box::new(ADSR2.ad_moog_lowpass(Box::new(square() * 5.625), state)),
         ADSR2.boxed(state),
     )
 }
@@ -151,7 +151,7 @@ pub fn moog_square(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 /// Sawtooth wave through a Moog filter modulated by an ADSR.
 pub fn moog_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_unpitched_sound(
-        Box::new(ADSR2.timed_moog(Box::new(saw() * 5.0), state)),
+        Box::new(ADSR2.ad_moog_lowpass(Box::new(saw() * 5.0), state)),
         ADSR2.boxed(state),
     )
 }
@@ -159,7 +159,7 @@ pub fn moog_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 /// Sawtooth wave through a Moog filter modulated by an ADSR.
 pub fn moog_soft_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_unpitched_sound(
-        Box::new(ADSR2.timed_moog(Box::new(soft_saw() * 7.6), state)),
+        Box::new(ADSR2.ad_moog_lowpass(Box::new(soft_saw() * 7.6), state)),
         ADSR2.boxed(state),
     )
 }
@@ -167,7 +167,7 @@ pub fn moog_soft_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 /// Organ wave through a Moog filtered modulated by an ADSR.
 pub fn moog_organ(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_unpitched_sound(
-        Box::new(ADSR2.timed_moog(Box::new(organ() * 6.7), state)),
+        Box::new(ADSR2.ad_moog_lowpass(Box::new(organ() * 6.7), state)),
         ADSR2.boxed(state),
     )
 }

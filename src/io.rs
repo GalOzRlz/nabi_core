@@ -496,6 +496,7 @@ struct SingleSourcePlayer<const N: usize> {
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
     config: Config,
+    eq_q: f32,
     global_fx_cc_idx_1: usize,
     global_fx_cc_idx_2: usize,
     global_fx_cc_idx_3: usize,
@@ -518,6 +519,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             master_volume: shared(0.15),
             program_table,
             config: config.clone(),
+            eq_q: 0.6,
             global_fx_cc_idx_1: config.cc_mappings[0],
             global_fx_cc_idx_2: config.cc_mappings[1],
             global_fx_cc_idx_3: config.cc_mappings[2],
@@ -556,7 +558,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 (sound * vol) >> eq_2_mono(
                         self.global_fx_cc_idx_3.clone(),
                         self.global_fx_cc_idx_4.clone(),
-                        0.5,
+                        self.eq_q,
                         &self.states[0],
                     ) >> split::<U2>()
             }
@@ -565,7 +567,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 (sound * vol) >> eq_2_stereo(
                         self.global_fx_cc_idx_3.clone(),
                         self.global_fx_cc_idx_4.clone(),
-                        0.5,
+                        self.eq_q,
                         &self.states[0],
                     )
             }
