@@ -5,8 +5,75 @@ use fundsp::{
     prelude64::{adsr_live, envelope2, moog_q},
 };
 use std::sync::Arc;
+use crate::{sounds, SharedMidiState, SynthFunc};
+use crate::community_sounds;
+use std::collections::HashMap;
+use inventory;
+use serde::Deserialize;
+use crate::config_builder::ENCODER_COUNT;
 
-use crate::{SharedMidiState, SynthFunc};
+/// Custom deserializer for [u8; 4] from a TOML array of integers.
+pub(crate) mod cc_array {
+    use serde::{Deserialize, Deserializer, de::{self, Visitor}};
+    use std::fmt;
+    use crate::config_builder::ENCODER_COUNT;
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct CcArray(pub [f32; ENCODER_COUNT]);
+
+    impl Default for CcArray {
+        fn default() -> Self { CcArray([0.0; 4]) }
+    }
+
+    impl<'de> Deserialize<'de> for CcArray {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+        {
+            struct CcVisitor;
+            impl<'de> Visitor<'de> for CcVisitor {
+                type Value = CcArray;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("an array of 4 integers (0–255)")
+                }
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where A: de::SeqAccess<'de>
+                {
+                    let mut arr = [0.0; 4];
+                    for (i, slot) in arr.iter_mut().enumerate() {
+                        *slot = seq.next_element()?.ok_or_else(|| {
+                            de::Error::invalid_length(i, &self)
+                        })?;
+                    }
+                    Ok(CcArray(arr))
+                }
+            }
+            deserializer.deserialize_seq(CcVisitor)
+        }
+    }
+}
+pub type SoundBuilder = fn(state: &SharedMidiState) -> Box<dyn AudioUnit>;
+
+/// Globally registered sound entries.
+pub struct SoundEntry {
+    /// Name used in TOML files (e.g. "fm_bell").
+    pub name: &'static str,
+    pub builder: SoundBuilder,
+}
+
+inventory::collect!(SoundEntry);
+
+/// Place this inside every sound file to register the builder.
+#[macro_export]
+macro_rules! register_sound {
+    ($name:expr, $builder:ident) => {
+        inventory::submit! {
+            SoundEntry {
+                name: $name,
+                builder: $builder as fn(&SharedMidiState) -> Box<dyn AudioUnit>,
+            }
+        }
+    };
+}
 
 #[macro_export]
 /// Convenience macro to build a `ProgramTable` struct. Given a sequence of tuples of `&str` objects
@@ -59,7 +126,7 @@ where
 }
 
 /// convenience type for a Program Table item with name and SpeakerDef.
-pub type ProgramTableItem = (String, SpeakerDef);
+pub type ProgramTableItem = (String, SpeakerDef, [f32; ENCODER_COUNT]);
 
 /// Struct containing all the entries from which you can choose your synths.
 pub struct ProgramTable {
@@ -69,19 +136,7 @@ pub struct ProgramTable {
 impl ProgramTable {
     pub fn new(entries: Vec<ProgramTableItem>) -> Self {
         Self { entries }
-    }
-
-    /// Return an owned mono-representation of all the synths inside a program table
-    pub fn to_iter_mono(&self) -> impl Iterator<Item = (&str, SynthFunc)> {
-        self.entries.iter().map(|(name, def)| {
-            let func = match def {
-                SpeakerDef::Stereo(f) => f,
-                SpeakerDef::LR { left, .. } => left,
-            };
-            (name.as_str(), func.clone())
-        })
-    }
-}
+    } }
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.
 pub fn simple_sound(state: &SharedMidiState, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {

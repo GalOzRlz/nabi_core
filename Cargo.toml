@@ -23,3 +23,6 @@ crossbeam-utils = "0.8.21"
 read_input = "0.8.6"
 float_eq = "1.0.1"
 fastrand = "2.4.1"
+inventory = "0.3.24"
+serde = { version = "1", features = ["derive"] }
+toml = "1.1.2"

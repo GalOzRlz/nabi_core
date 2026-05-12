@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use midi_fundsp::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
+use midi_fundsp::config_builder::{Config, FreeVoiceStrategy, VoiceStealingConfig};
 use midi_fundsp::io::start_midi_output_thread;
 use midi_fundsp::sound_builders::*;
 use midi_fundsp::{

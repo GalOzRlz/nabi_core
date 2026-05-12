@@ -1,4 +1,4 @@
-use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
+use crate::config_builder::{Config, FreeVoiceStrategy, VoiceStealingConfig};
 use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
 use crate::sound_builders::SpeakerDef;
 use crate::{

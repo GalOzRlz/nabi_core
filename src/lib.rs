@@ -28,19 +28,19 @@
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
 
-pub mod config;
+pub mod config_builder;
 mod effects;
 pub mod io;
 pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
 mod instruments;
-
+pub mod community_sounds;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::config::Config;
+use crate::config_builder::Config;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -111,7 +111,7 @@ impl SharedMidiState {
         for (cc_num, start_val) in config
             .cc_mappings
             .into_iter()
-            .zip(config.cc_start_values.into_iter())
+            .zip(config.cc_default_values.into_iter())
         {
             self.control_change[cc_num as usize].set_value(start_val);
             //println!("cc_num: {}, start_val: {}", cc_num, start_val);
