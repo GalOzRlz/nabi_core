@@ -26,6 +26,11 @@ fn cc_controlled_reverb(wet_amount: Net) -> Net {
     (pass * dry_stereo) & (reverb * wet_stereo)
 }
 
+pub fn cem_3320_lowpass_filter() -> Net {
+    Net::wrap(Box::new(
+    !butterpass() >> butterpass()))
+}
+
 pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
     let cutoff_hrz = product(constant(max_cutoff_hz), cutoff_val) >> common_follow();
     Net::wrap(Box::new(
