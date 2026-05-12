@@ -33,17 +33,18 @@
 //! convenient Control Change channel for my own MIDI keyboard.) This illustrates how to build and employ
 //! sounds using MIDI Control Change for any application you might imagine.
 
+pub mod config;
+mod effects;
 pub mod io;
 pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
-pub mod config;
-mod effects;
 
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::config::Config;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -84,14 +85,15 @@ pub struct SharedMidiState {
 
 impl Default for SharedMidiState {
     fn default() -> Self {
-        Self {
+        let s = Self {
             pitch: Default::default(),
             velocity: Default::default(),
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             control_change: core::array::from_fn(|_| Shared::new(0.0)),
-        }
+        };
+        s.with_config(Config::default())
     }
 }
 
@@ -109,6 +111,18 @@ impl Debug for SharedMidiState {
 }
 
 impl SharedMidiState {
+    pub fn with_config(self, config: Config) -> Self {
+        for (cc_num, start_val) in config
+            .cc_mappings
+            .into_iter()
+            .zip(config.cc_start_values.into_iter())
+        {
+            self.control_change[cc_num as usize].set_value(start_val);
+            println!("cc_num: {}, start_val: {}", cc_num, start_val);
+        }
+        self
+    }
+
     /// Changes how MIDI notes are converted to pitches. Defaults to equal temperament.
     pub fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         self.midi_to_hz = midi_to_hz;

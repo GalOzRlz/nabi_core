@@ -9,10 +9,10 @@ pub enum VoiceStealingConfig {
 
 /// Determine if voices are freed from current voices queue by instrument ADSR or by being at zero volume.
 /// Release on zero is a bit costlier but allows for 0.0 release sounds to play better.
- #[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FreeVoiceStrategy {
     FollowADSR,
-    ReleaseOnZero
+    ReleaseOnZero,
 }
 
 /// Configuration block for extra features
@@ -20,11 +20,8 @@ pub enum FreeVoiceStrategy {
 pub struct Config {
     pub voice_stealing: VoiceStealingConfig,
     pub voice_release: FreeVoiceStrategy,
-    pub cc_1: usize,
-    pub cc_2: usize,
-    pub cc_3: usize,
-    pub cc_4: usize
-
+    pub cc_mappings: Vec<usize>,
+    pub cc_start_values: Vec<f32>,
 }
 
 impl Default for Config {
@@ -33,10 +30,8 @@ impl Default for Config {
             voice_stealing: VoiceStealingConfig::LegatoOldest,
             voice_release: FreeVoiceStrategy::ReleaseOnZero,
             // todo: make these overrideable by controller.toml
-            cc_1: 74,
-            cc_2: 71,
-            cc_3: 76,
-            cc_4: 77
+            cc_mappings: vec![74, 71, 76, 77], // use vec so we can hot-swap?
+            cc_start_values: vec![0.0, 0.0, 0.0, 1.0],
         }
     }
 }
