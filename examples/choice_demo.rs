@@ -8,9 +8,9 @@ use midi_fundsp::{
         start_output_thread,
     },
     sound_builders::ProgramTable,
-    sounds::options,
 };
 use midir::MidiInput;
+use midi_fundsp::sounds::favorites;
 
 fn main() -> anyhow::Result<()> {
     let reset = Arc::new(AtomicCell::new(false));
@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
         let midi_msgs = Arc::new(SegQueue::new());
         while reset.load() {}
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
-        let program_table = Arc::new(Mutex::new(options()));
+        let program_table = Arc::new(Mutex::new(favorites()));
         start_output_thread::<10>(midi_msgs.clone(), program_table.clone(), None);
         run_chooser(midi_msgs, program_table.clone(), reset.clone(), &mut quit);
     }

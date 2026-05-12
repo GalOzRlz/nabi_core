@@ -1,15 +1,9 @@
-use crate::effects::simple_lowpass;
-use crate::sound_builders::{Adsr, IntoSpeakerDef, ProgramTable, simple_sound};
-use crate::{SharedMidiState, program_table};
+use crate::instruments::{dirty_guitar, hit_comb_pipe, pluck_comb_string};
+use crate::sound_builders::{simple_sound, Adsr, IntoSpeakerDef, ProgramTable};
+use crate::{program_table, SharedMidiState};
 use fundsp::net::Net;
-use fundsp::prelude::{
-    AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass,
-    resonator_hz,
-};
-use fundsp::prelude64::{
-    adsr_live, constant, dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine,
-    sine_hz, soft_saw, square, triangle, var,
-};
+use fundsp::prelude::{brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz, shape, AudioUnit, U2};
+use fundsp::prelude64::{constant, dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var, Atan};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -33,8 +27,6 @@ pub fn options() -> ProgramTable {
         ("Xylophone", xylophone),
         ("Clavichord (Sharp)", clavichord_sharp),
         ("Clavichord (Soft)", clavichord_soft),
-        ("Guitar-ish", guitarish),
-        ("Music Box", music_box::<7>)
     ]
 }
 
@@ -56,7 +48,8 @@ pub fn favorites() -> ProgramTable {
         ("Xylophone", xylophone),
         ("Clavichord (Sharp)", clavichord_sharp),
         ("Clavichord (Soft)", clavichord_soft),
-        ("Guitar-ish", guitarish)
+        ("KS Strings", harpsichord),
+        ("Chorus Guiar", chorused_dirty_guitar)
     ]
 }
 
@@ -299,85 +292,45 @@ fn guitarish_pitched(pitch: Net) -> Net {
         >> lowpass_hz::<f32>(3000.0, 0.5)
 }
 
-/// An attempt at an acoustic-guitar inspired sound.
-pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+pub fn harpsichord(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
         attack: 0.005,
-        decay: 1.0,
+        decay: 0.8,
         sustain: 0.0,
-        release: 0.5,
+        release: 0.0,
     };
-    let mix = Net::stack(state.bent_pitch(), Net::wrap(Box::new(var(&shared(0.3)))))
-        >> pulse()
-        >> lowpass_hz::<f32>(3000.0, 0.5);
+    let gate = state.control_var().clone();
+    let mix = (state.bent_pitch().clone() | gate | constant(0.0))
+        >> pluck_comb_string()
+        >> lowpass_hz(9000.0, 0.5);
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
 
-pub fn wide_chorus_guitarish_l(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+pub fn plastic_pipe(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
         attack: 0.005,
-        decay: 1.0,
+        decay: 0.5,
         sustain: 0.0,
-        release: 0.6,
+        release: 0.0,
     };
-    let base_pitch = state.bent_pitch();
-    let lfo = sine_hz(3.5) * 0.0065;
-    let pitch = base_pitch.clone() * (constant(1.0) + lfo);
-    let g = guitarish_pitched(pitch);
-    state.assemble_pitched_sound(Box::new(g), adsr.boxed(state))
+    let gate = state.control_var().clone();
+    let mix = (state.bent_pitch().clone() | gate | constant(0.0))
+        >> hit_comb_pipe()
+        >> lowpass_hz(7000.0, 0.5);
+    state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
 
-pub fn wide_chorus_guitarish_r(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+pub fn chorused_dirty_guitar(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let adsr = Adsr {
-        attack: 0.007,
-        decay: 1.05,
-        sustain: 0.0,
-        release: 0.65,
+        attack: 0.005,
+        decay: 0.8,
+        sustain: 1.0,
+        release: 0.2,
     };
     let base_pitch = state.bent_pitch();
-    let lfo = sine_hz(3.0) * 0.0165;
-    let pitch = base_pitch.clone() * (constant(1.0) + lfo);
-    let g = guitarish_pitched(pitch);
-    state.assemble_pitched_sound(Box::new(g), adsr.boxed(state))
-}
-
-/// Something between a celesta and a prepared-piano with filter cutoff mapped to specified midi CC constant
-pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit> {
-    let synth_adsr = Adsr {
-        attack: 0.002,
-        decay: 0.0,
-        sustain: 1.0,
-        release: 0.6,
-    };
-    let a1 = 0.600;
-    let a2 = 0.350;
-    let a3 = 0.200;
-    let a4 = 0.100;
+    let lfo1 = sine_hz(3.0) * 0.0065;
+    let pitch1 = base_pitch.clone() * (constant(1.0) + lfo1);
     let gate = state.control_var();
-
-    let modes = (mul(1.000)
-        >> (sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.3, synth_adsr.release))))
-        & ((mul(2.756) >> (sine() * a1))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release)))
-        & ((mul(5.404) >> (sine() * a2))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release)))
-        & ((mul(8.933) >> (sine() * a3))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 10.0, 0.0, synth_adsr.release)))
-        & ((mul(13.34) >> (sine() * a4))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release)))
-            >> dcblock::<f64>();
-
-    let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
-    let body = (pass() * 0.4)
-        & (0.5 * resonator_hz(153.7, 20.0))
-        & (0.3 * resonator_hz(322.6, 25.0))
-        & (0.1 * resonator_hz(555.4, 15.0));
-
-    // set cutoff stream with smoothing
-    let cutoff_val = state.control_change_var(CC);
-    let max_cutoff_hz = 5_000.0;
-    let combined = tone >> body >> (highpass_hz(30.0, 0.7) * db_amp(-4.0));
-    let lowpass = simple_lowpass(cutoff_val, max_cutoff_hz);
-    let synth = Box::new(combined >> lowpass);
-    state.assemble_unpitched_sound(synth, synth_adsr.boxed(state))
+    let dg = dirty_guitar();
+    state.assemble_pitched_sound(Box::new(dg(pitch1, gate.clone()) * 6.6 >> shape(Atan(5.0))), adsr.boxed(state))
 }

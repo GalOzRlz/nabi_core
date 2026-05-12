@@ -27,11 +27,6 @@
 //! * [`just_tempered_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/just_tempered_demo.rs) shows how to
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
-//! * [`cc_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/cc_demo.rs) demonstrates
-//! the use of a sound with properties altered by a MIDI Control Change message. The Control Change channel
-//! is specified by a generic constant for the `MusicBox` sound type. (It is set at 7 in this example because that is a
-//! convenient Control Change channel for my own MIDI keyboard.) This illustrates how to build and employ
-//! sounds using MIDI Control Change for any application you might imagine.
 
 pub mod config;
 mod effects;
@@ -39,6 +34,7 @@ pub mod io;
 pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
+mod instruments;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -118,7 +114,7 @@ impl SharedMidiState {
             .zip(config.cc_start_values.into_iter())
         {
             self.control_change[cc_num as usize].set_value(start_val);
-            println!("cc_num: {}, start_val: {}", cc_num, start_val);
+            //println!("cc_num: {}, start_val: {}", cc_num, start_val);
         }
         self
     }

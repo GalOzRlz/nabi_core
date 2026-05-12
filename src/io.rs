@@ -552,29 +552,25 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
         let mix = match sound.outputs() {
             1 => {
-                (sound * var(&self.master_volume))
-                    >> eq_2_mono(
+                let vol = var(&self.master_volume);
+                (sound * vol) >> eq_2_mono(
                         self.global_fx_cc_idx_3.clone(),
                         self.global_fx_cc_idx_4.clone(),
-                        4.0,
+                        0.5,
                         &self.states[0],
-                    )
-                    >> split::<U2>()
+                    ) >> split::<U2>()
             }
             2 => {
-                let vol = var(&self.master_volume)
-                    >> eq_2_stereo(
+                let vol = var(&self.master_volume);
+                (sound * vol) >> eq_2_stereo(
                         self.global_fx_cc_idx_3.clone(),
                         self.global_fx_cc_idx_4.clone(),
-                        4.0,
+                        0.5,
                         &self.states[0],
-                    );
-                sound * vol
+                    )
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
-        println!("=== Sound function called ===");
-
         // need to figure out how to be able to hot swap master reverb with something else?
         mix >> master_limiter() >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
