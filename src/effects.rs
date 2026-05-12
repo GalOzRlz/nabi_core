@@ -16,6 +16,7 @@ fn common_follow() -> An<Follow<f64>> {
     follow(0.05)
 }
 
+/// Factory for stereo effects with wet/dry control via Net  (suitable for live Midi CC)
 fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     // Duplicate wet to stereo (0 inputs, 2 outputs)
     let wet_amount =  wet_amount >> common_follow();
