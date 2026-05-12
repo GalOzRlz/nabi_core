@@ -38,12 +38,12 @@ impl Default for Config {
     }
 }
 
-// to do: implement toml overrides for cc mapping and then per-sound defaults
 
 use std::collections::HashMap;
 use serde::Deserialize;
 use crate::config_builder::cc_array::CcArray;
 use crate::sound_builders::{IntoSpeakerDef, ProgramTable, SoundBuilder, SoundEntry};
+
 
 /// Custom deserializer for [u8; 4] from a TOML array of integers.
 pub(crate) mod cc_array {
