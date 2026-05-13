@@ -31,11 +31,13 @@
 pub mod config_builder;
 mod effects;
 pub mod io;
-pub mod patch_builders;
+pub mod patch_builder;
 pub mod sounds;
 pub mod tunings;
 mod instruments;
 pub mod community_patches;
+mod patch_helpers;
+
 use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;
 use std::sync::Arc;

@@ -7,7 +7,7 @@ use nabi_core::{
         Speaker, SynthMsg, choose_midi_device, console_choice_from, start_input_thread,
         start_output_thread,
     },
-    patch_builders::PatchTable,
+    patch_builder::PatchTable,
 };
 use midir::MidiInput;
 use nabi_core::config_builder::{create_ordered_patch_table, load_global_config};

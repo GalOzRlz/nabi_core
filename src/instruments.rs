@@ -258,7 +258,7 @@ pub fn pluck_comb_string() -> An<CombPluck> {
 }
 
 pub fn hit_comb_pipe() -> An<CombPluck> {
-    pluck_generic(0.995, 0.1, 0.7, 0.75, Polarity::Negative)
+    pluck_generic(0.995, 0.1, 0.7, 0.25, Polarity::Negative)
 }
 
 pub fn dirty_guitar() -> fn(Net, An<Var>) -> Net {

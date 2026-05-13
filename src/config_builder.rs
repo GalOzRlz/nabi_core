@@ -1,4 +1,4 @@
-use crate::patch_builders::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
+use crate::patch_builder::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
 use serde::{de::{self, Visitor}, Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::collections::HashSet;

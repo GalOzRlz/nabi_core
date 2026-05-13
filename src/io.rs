@@ -1,8 +1,8 @@
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
-use crate::patch_builders::{PatchTableItem, SpeakerDef};
+use crate::patch_builder::{PatchTableItem, SpeakerDef};
 use crate::{
-    control_change_from, note_velocity_from, patch_builders::PatchTable, SharedMidiState, SynthFunc,
+    control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
     NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
