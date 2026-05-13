@@ -35,7 +35,7 @@ macro_rules! register_sound {
 }
 
 /// Maximum number of entries controllable via MIDI messages in a MIDI program table.
-pub const NUM_PROGRAM_SLOTS: usize = 2_usize.pow(7);
+pub const NUM_PATCH_SLOTS: usize = 2_usize.pow(7);
 
 /// A Speaker Definition enum to handle either separate L/R output or true stereo instruments (i.e., with U2 outputs).
 #[derive(Clone)]

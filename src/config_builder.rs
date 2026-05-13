@@ -115,7 +115,7 @@ impl<'de> Deserialize<'de> for TomlCcArray {
 
 
 #[derive(Deserialize)]
-pub struct TomlProgram {
+pub struct TomlPatch {
     function: String,
     #[serde(default)]
     name: Option<String>,
@@ -126,8 +126,8 @@ pub struct TomlProgram {
 }
 
 #[derive(Deserialize)]
-pub struct ProgramFile {
-    program: Vec<TomlProgram>,
+pub struct PatchFile {
+    program: Vec<TomlPatch>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -162,19 +162,19 @@ pub fn load_global_config() -> Option<GlobalConfig> {
     }
 }
 
-fn load_program_file(path: &str) -> Result<Vec<TomlProgram>, Box<dyn std::error::Error>> {
+fn load_patch_file(path: &str) -> Result<Vec<TomlPatch>, Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path)?;
-    let file: ProgramFile = toml::from_str(&text)?;
+    let file: PatchFile = toml::from_str(&text)?;
     Ok(file.program)
 }
 
 /// Load multiple TOML files, merge duplicates (last definition wins for CC and name).
-pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
+pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatch> {
     let mut all_programs = Vec::new();
     let mut used_names: HashSet<String> = HashSet::new();
 
     for path in paths {
-        let programs = match load_program_file(path) {
+        let programs = match load_patch_file(path) {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("Skipping {}: {}", path, e);
@@ -194,7 +194,7 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
             }
             used_names.insert(display_name.clone());
 
-            all_programs.push(TomlProgram {
+            all_programs.push(TomlPatch {
                 function: prog.function,
                 name: Some(display_name),
                 cc: prog.cc,
@@ -205,7 +205,7 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
     all_programs
 }
 
-pub fn build_patch_table(programs: &[TomlProgram]) -> PatchTable {
+pub fn build_patch_table(programs: &[TomlPatch]) -> PatchTable {
     // Lookup from name to raw builder pointer
     let builder_map: HashMap<&str, SoundBuilder> = inventory::iter::<PatchEntry>()
         .map(|e| (e.name, e.builder))
@@ -248,11 +248,8 @@ pub fn build_patch_table(programs: &[TomlProgram]) -> PatchTable {
     PatchTable::new(entries)
 }
 
-pub fn get_patch_table_from_toml() -> PatchTable {
-    let all_programs = load_all_programs(&[
-        "patches_config/builtin.toml",
-        "patches_config/community.toml",
-    ]);
+fn get_patch_table_from_toml(paths: &[&str]) -> PatchTable {
+    let all_programs = load_all_programs(paths);
 
     let table = build_patch_table(&all_programs);
     println!("Loaded {} programs:", &table.entries.len());
@@ -298,9 +295,9 @@ pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
     *entries = new_entries;
 }
 
-pub fn create_ordered_patch_table() -> PatchTable {
-    let mut patch_table = get_patch_table_from_toml();
-    if let Ok(text) = std::fs::read_to_string("patches_config/order.toml") {
+pub fn create_ordered_patch_table(patch_paths: &[&str], order_path: &str) -> PatchTable {
+    let mut patch_table = get_patch_table_from_toml(patch_paths);
+    if let Ok(text) = std::fs::read_to_string(order_path) {
         if let Ok(ord_config) = toml::from_str::<TomlOrderConfig>(&text) {
             eprintln!("Loaded ordered patch table:{:?}", ord_config.patch_order);
             reorder_by_names(&mut patch_table.entries, &ord_config.patch_order);

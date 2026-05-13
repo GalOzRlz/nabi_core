@@ -22,9 +22,13 @@ fn main() -> anyhow::Result<()> {
         let midi_msgs = Arc::new(SegQueue::new());
         while reset.load() {}
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
-        let patch_table = Arc::new(Mutex::new(create_ordered_patch_table()));
+        let patch_table = Arc::new(Mutex::new(
+            create_ordered_patch_table(
+                &["patches_config/community.toml", "patches_config/builtin.toml"],
+                &"order.toml",
+            )));
         start_output_thread::<10>(midi_msgs.clone(), patch_table.clone(), Option::from(global_config));
-        run_chooser(midi_msgs, patch_table.clone(), reset.clone(), &mut quit);
+        run_chooser(midi_msgs, patch_table, reset.clone(), &mut quit);
     }
     Ok(())
 }
@@ -46,7 +50,7 @@ fn run_chooser(
                         opt.0.as_str()
                     })
                 };
-                midi_msgs.push(SynthMsg::program_change(program as u8, Speaker::Both));
+                midi_msgs.push(SynthMsg::patch_change(program as u8, Speaker::Both));
             }
             1 => reset.store(true),
             2 => *quit = true,

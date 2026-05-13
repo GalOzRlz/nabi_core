@@ -70,7 +70,7 @@ impl SynthMsg {
     }
 
     /// Returns MIDI `Program Change` message. This selects the synthesizer sound with the given index.
-    pub fn program_change(program: u8, speaker: Speaker) -> Self {
+    pub fn patch_change(program: u8, speaker: Speaker) -> Self {
         Self {
             msg: MidiMsg::ChannelVoice {
                 channel: midi_msg::Channel::Ch1,
