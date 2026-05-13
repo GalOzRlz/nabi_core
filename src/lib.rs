@@ -14,33 +14,35 @@
 //!   into `SynthFunc` functions with a variety of properties.
 //! * The `sounds` module contains `SynthFunc` functions that produce a variety of live sounds.
 //!
-//! The following [example programs](https://github.com/gjf2a/midi_fundsp/tree/master/examples) show how these components
+//! The following [example programs](https://github.com/gjf2a/nabi_core/tree/master/examples) show how these components
 //! interact to produce a working synthesizer:
-//! * [`basic_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/basic_demo.rs) opens the first MIDI
+//! * [`basic_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/basic_demo.rs) opens the first MIDI
 //! device it finds and plays a simple triangle waveform sound in response to MIDI events.
-//! * [`stereo_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/stereo_demo.rs) also opens the first MIDI
+//! * [`stereo_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/stereo_demo.rs) also opens the first MIDI
 //! device it finds. It plays notes below middle C through the left speaker using a Moog Pulse sound, and notes
 //! at Middle C or higher through the right speaker using a Moog Triangle sound.
-//! * [`choice_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/choice_demo.rs) allows the user to choose
+//! * [`choice_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/choice_demo.rs) allows the user to choose
 //! one from among all connected MIDI devices. The user can then choose any sound from the `sounds` module for the program's
 //! response to MIDI events.
-//! * [`just_tempered_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/just_tempered_demo.rs) shows how to
+//! * [`just_tempered_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/just_tempered_demo.rs) shows how to
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
 
-pub mod config;
+pub mod config_builder;
 mod effects;
 pub mod io;
-pub mod sound_builders;
+pub mod patch_builder;
 pub mod sounds;
 pub mod tunings;
 mod instruments;
+pub mod community_patches;
+mod patch_helpers;
 
+use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::config::Config;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -79,17 +81,16 @@ pub struct SharedMidiState {
     control_change: [Shared; 128],
 }
 
-impl Default for SharedMidiState {
+impl Default for  SharedMidiState {
     fn default() -> Self {
-        let s = Self {
+        Self {
             pitch: Default::default(),
             velocity: Default::default(),
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             control_change: core::array::from_fn(|_| Shared::new(0.0)),
-        };
-        s.with_config(Config::default())
+        }
     }
 }
 
@@ -107,14 +108,18 @@ impl Debug for SharedMidiState {
 }
 
 impl SharedMidiState {
-    pub fn with_config(self, config: Config) -> Self {
-        for (cc_num, start_val) in config
-            .cc_mappings
+    
+    pub fn new(cc_mapping: [usize; ENCODER_COUNT], cc_array: CcValuesArray) -> Self {
+        let s = Self::default();
+        s.with_cc(cc_mapping, cc_array)
+    }
+
+    pub fn with_cc(self, cc_mapping: [usize; ENCODER_COUNT], cc_array: CcValuesArray) -> Self {
+        for (cc_num, start_val) in cc_mapping
             .into_iter()
-            .zip(config.cc_start_values.into_iter())
+            .zip(cc_array.into_iter())
         {
-            self.control_change[cc_num as usize].set_value(start_val);
-            //println!("cc_num: {}, start_val: {}", cc_num, start_val);
+            self.control_change[cc_num].set_value(start_val);
         }
         self
     }
@@ -176,8 +181,8 @@ impl SharedMidiState {
     }
 
     /// Set an incoming control change in an `Array<Shared>` where the array index matches control number.
-    pub fn set_control_change(&self, control_idx: u8, value: f32) {
-        self.control_change[control_idx as usize].set_value(value)
+    pub fn set_control_change(&self, control_idx: usize, value: f32) {
+        self.control_change[control_idx].set_value(value)
     }
 
     /// get a control change value based on its data index

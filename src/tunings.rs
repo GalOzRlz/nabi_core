@@ -1,8 +1,33 @@
+use fundsp::math::midi_hz;
+use inventory;
+
 const WELL_C_MINUS_1: f32 = 8.203_544;
 
 /// C standard in hertz on equal temperament with A as 440 hertz.
 /// Rf: https://inspiredacoustics.com/en/MIDI_note_numbers_and_center_frequencies
 const STANDARD_C: f32 = 8.18;
+
+/// A tuner converts a MIDI note (0–127) to a frequency (Hz).
+pub type TunerBuilder =  fn(f32) -> f32;
+
+#[macro_export]
+macro_rules! register_tuner {
+    ($name:expr, $tuner:ident) => {
+        inventory::submit! {
+            TunerEntry {
+                name: $name,
+                tuner: $tuner as fn(f32) -> f32,
+            }
+        }
+    };
+}
+
+pub struct TunerEntry {
+    pub name: &'static str,
+    pub tuner: TunerBuilder,
+}
+
+inventory::collect!(TunerEntry);
 
 /// Terry Riley's "Harp of New Albion" tuning which is a modified Malcolm tuning (Limit-5).
 /// Adapted from the Scala library: https://www.huygens-fokker.org/scala/
@@ -112,3 +137,7 @@ mod tests {
         }
     }
 }
+
+register_tuner!("just intonation", just_intonation);
+register_tuner!("well-tempered", well_temperament);
+register_tuner!("standard equal", midi_hz);
