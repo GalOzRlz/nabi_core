@@ -7,22 +7,23 @@ use nabi_core::{
         Speaker, SynthMsg, choose_midi_device, console_choice_from, start_input_thread,
         start_output_thread,
     },
-    sound_builders::PatchTable,
+    patch_builders::PatchTable,
 };
 use midir::MidiInput;
-use nabi_core::config_builder::create_ordered_patch_table;
+use nabi_core::config_builder::{create_ordered_patch_table, load_global_config};
 
 fn main() -> anyhow::Result<()> {
     let reset = Arc::new(AtomicCell::new(false));
     let mut quit = false;
     while !quit {
+        let global_config = load_global_config();
         let mut midi_in = MidiInput::new("midir reading input")?;
         let in_port = choose_midi_device(&mut midi_in)?;
         let midi_msgs = Arc::new(SegQueue::new());
         while reset.load() {}
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
         let patch_table = Arc::new(Mutex::new(create_ordered_patch_table()));
-        start_output_thread::<10>(midi_msgs.clone(), patch_table.clone(), None);
+        start_output_thread::<10>(midi_msgs.clone(), patch_table.clone(), Option::from(global_config));
         run_chooser(midi_msgs, patch_table.clone(), reset.clone(), &mut quit);
     }
     Ok(())

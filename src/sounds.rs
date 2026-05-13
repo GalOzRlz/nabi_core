@@ -1,5 +1,5 @@
 use crate::instruments::{dirty_guitar, hit_comb_pipe, pluck_comb_string};
-use crate::sound_builders::*;
+use crate::patch_builders::*;
 use crate::{register_sound, SharedMidiState};
 use fundsp::net::Net;
 use fundsp::prelude::{brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz, shape, AudioUnit, U2};

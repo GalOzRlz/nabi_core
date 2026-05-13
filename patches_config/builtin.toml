@@ -2,3 +2,7 @@
 function = "chorused_dirty_guitar"
 name = "chorused dirty guitar"
 cc = [0.0, 0.2, 0, 1.0]
+
+## todo: add these as well to the config building
+# tunning_func = "just_intonation"
+# master_fx_func = ""

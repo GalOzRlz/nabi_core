@@ -2,3 +2,4 @@
 function = "clavichord_soft"
 name = "soft casio harpsichord"
 cc = [0.5, 0.8, 0, 1.0]
+tuning = "just intonation"

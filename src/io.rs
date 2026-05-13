@@ -1,8 +1,8 @@
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
-use crate::sound_builders::SpeakerDef;
+use crate::patch_builders::{PatchTableItem, SpeakerDef};
 use crate::{
-    control_change_from, note_velocity_from, sound_builders::PatchTable, SharedMidiState, SynthFunc,
+    control_change_from, note_velocity_from, patch_builders::PatchTable, SharedMidiState, SynthFunc,
     NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
@@ -26,6 +26,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
+use crate::tunings::TunerBuilder;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -230,31 +231,6 @@ pub fn start_midi_output_thread<const N: usize>(
     inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(patch_table, cnf));
 }
 
-/// Plays sounds according to `MidiMsg` objects received in the `midi_msgs` queue. Synthesizer sounds may be selected with
-/// MIDI `Program Change` messages that reference sounds stored in `patch_table`.
-///
-/// The function `midi_to_hz()` converts MIDI pitches (0-127) to frequencies. To represent
-/// an alternative tuning system, pass in an appropriate function.
-///
-/// The constant value `N` is the number of distinct sounds it can emit. Each MIDI `Note On` message uses one distinct
-/// sound. When a number of `Note On` messages greater than `N` has been received, the sound used by the oldest `Note On`
-/// message is reused for the new `Note On` message.
-///
-/// Setting `N = 1` yields a monophonic synthesizer. Setting `N = 10` should suffice for most purposes.
-///
-/// If a `SystemReset` MIDI message is received, the thread exits.
-pub fn start_midi_output_thread_alt_tuning<const N: usize>(
-    midi_msgs: Arc<SegQueue<MidiMsg>>,
-    patch_table: Arc<Mutex<PatchTable>>,
-    midi_to_hz: fn(f32) -> f32,
-    config: Option<GlobalConfig>,
-) {
-    let cnf = config.unwrap_or_default();
-    let mut player = StereoPlayer::<N>::new(patch_table, cnf);
-    player.set_midi_to_hz(midi_to_hz);
-    inner_start_output_thread(midi_msgs, player);
-}
-
 fn inner_start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
     mut player: StereoPlayer<N>,
@@ -396,9 +372,11 @@ struct StereoPlayer<const N: usize> {
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self {
-        let cc_array_values = patch_table.clone().lock().unwrap().entries[0].2;
+        let first_table = patch_table.clone().lock().unwrap().entries[0].clone();
+        let cc_array_values = first_table.2.clone();
+        let tuner = first_table.3.clone();
         let center_source =
-            SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config, cc_array_values);
+            SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config, cc_array_values, tuner);
         Self { center_source }
     }
 
@@ -503,12 +481,17 @@ struct SingleSourcePlayer<const N: usize> {
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
-    fn new(patch_table: Arc<Mutex<PatchTable>>, speaker: Speaker, config: GlobalConfig, cc_array: CcValuesArray) -> Self {
+    fn new(patch_table: Arc<Mutex<PatchTable>>,
+           speaker: Speaker,
+           config: GlobalConfig,
+           cc_array: CcValuesArray,
+           tuner: TunerBuilder
+        ) -> Self {
         let synth_func = {
             let patch_table = patch_table.lock().unwrap();
             def_to_synth(&speaker, patch_table.entries[0].1.clone())
         };
-        Self {
+        let mut s = Self {
             states: [(); N].map(|_| SharedMidiState::new(config.cc_mappings, cc_array)),
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
@@ -522,7 +505,9 @@ impl<const N: usize> SingleSourcePlayer<N> {
             global_fx_cc_idx_2: config.cc_mappings[1],
             global_fx_cc_idx_3: config.cc_mappings[2],
             global_fx_cc_idx_4: config.cc_mappings[3],
-        }
+        };
+        s.set_midi_to_hz(tuner);
+        s
     }
 
     fn set_cc_start_values(&self, cc_array: CcValuesArray) {
@@ -602,11 +587,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
                     self.bend(*bend);
                 }
                 ChannelVoiceMsg::ProgramChange { program } => {
-                    let (def, cc_vals) = {
-                        let patch_table = &self.patch_table.lock().unwrap().entries[*program as usize];
-                        (patch_table.1.clone(), patch_table.2.clone())
-                    };
-                    self.change_synth(def, cc_vals);
+                    let patch_table = self.patch_table.lock().unwrap().entries[*program as usize].clone();
+                    self.change_synth(patch_table);
                     return Some(RelayedMessage::SynthChange);
                 }
                 ChannelVoiceMsg::ControlChange {
@@ -675,10 +657,12 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
     }
 
-    fn change_synth(&mut self, def: SpeakerDef, cc_values_array: CcValuesArray) {
+    fn change_synth(&mut self, patch_table: PatchTableItem) {
+        let (_, def, cc_vals, tuning) = patch_table;
         self.all_sounds_off();
         self.synth_func = def_to_synth(&self.speaker, def.clone());
-        self.set_cc_start_values(cc_values_array)
+        self.set_cc_start_values(cc_vals);
+        self.set_midi_to_hz(tuning);
     }
 
     fn bend(&mut self, bend: u16) {

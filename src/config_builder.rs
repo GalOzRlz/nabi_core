@@ -1,19 +1,23 @@
-use crate::sound_builders::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
+use crate::patch_builders::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
 use serde::{de::{self, Visitor}, Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
+use fastrand::usize;
+use fundsp::math::midi_hz;
+use crate::tunings::{TunerBuilder, TunerEntry};
 
 pub const ENCODER_COUNT: usize = 4;
 pub const DEFAULT_CC_ARRAY: CcValuesArray = [0.0, 0.0, 0.0, 1.0];
-
+pub const DEFAULT_CC_MAPPING: CcMapping = [74, 71, 76, 77];
 pub type CcValuesArray = [f32; ENCODER_COUNT];
 pub type CcMapping = [usize; ENCODER_COUNT];
 
 /// Determines the voice stealing strategy:
 /// LegatoOldest: Keep envelope and steal the oldest voice
 /// LegatoLast: either oldest or latest voice
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub enum VoiceStealingConfig {
     LegatoOldest,
     LegatoLast,
@@ -21,18 +25,46 @@ pub enum VoiceStealingConfig {
 
 /// Determine if voices are freed from current voices queue by instrument ADSR or by being at zero volume.
 /// Release on zero is a bit costlier but allows for 0.0 release sounds to play better.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub enum FreeVoiceStrategy {
     FollowADSR,
     ReleaseOnZero,
 }
 
-/// Configuration block for extra features
+#[derive(Deserialize)]
+struct GlobalConfigToml {
+    #[serde(default)]
+    global: GlobalSection,
+}
+
+impl Default for GlobalSection {
+    fn default() -> Self {
+        Self {
+            cc_mappings: None,
+            voice_stealing: None,
+            voice_release: None,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct GlobalSection {
+    #[serde(default)]                             // None if missing
+    cc_mappings: Option<CcMapping>,
+
+    #[serde(default)]
+    voice_stealing: Option<VoiceStealingConfig>,
+
+    #[serde(default)]
+    voice_release: Option<FreeVoiceStrategy>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalConfig {
     pub voice_stealing: VoiceStealingConfig,
     pub voice_release: FreeVoiceStrategy,
-    pub cc_mappings: CcMapping,
+    pub cc_mappings: CcMapping,          // your type that wraps [u8; 4]
 }
 
 impl Default for GlobalConfig {
@@ -40,26 +72,27 @@ impl Default for GlobalConfig {
         Self {
             voice_stealing: VoiceStealingConfig::LegatoLast,
             voice_release: FreeVoiceStrategy::ReleaseOnZero,
-            cc_mappings: [74, 71, 76, 77], // todo: move to midi.toml, read from there!
+            cc_mappings: DEFAULT_CC_MAPPING,
         }
     }
 }
 
+
 /// Custom deserializer for [u8; 4] from a TOML array of integers.
 #[derive(Debug, Clone, Copy)]
-pub struct CCArray(pub CcValuesArray);
+pub struct TomlCcArray(pub CcValuesArray);
 
-impl Default for CCArray {
-    fn default() -> Self { CCArray(DEFAULT_CC_ARRAY)}
+impl Default for TomlCcArray {
+    fn default() -> Self { TomlCcArray(DEFAULT_CC_ARRAY)}
 }
 
-impl<'de> Deserialize<'de> for CCArray {
+impl<'de> Deserialize<'de> for TomlCcArray {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de>
     {
         struct CcVisitor;
         impl<'de> Visitor<'de> for CcVisitor {
-            type Value = CCArray;
+            type Value = TomlCcArray;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let fmt = format!("an array of {} integers (0–255)", ENCODER_COUNT);
                 f.write_str(fmt.as_str())
@@ -67,13 +100,13 @@ impl<'de> Deserialize<'de> for CCArray {
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where A: de::SeqAccess<'de>
             {
-                let mut arr = [0.0; 4];
+                let mut arr = [0.0; ENCODER_COUNT];
                 for (i, slot) in arr.iter_mut().enumerate() {
                     *slot = seq.next_element()?.ok_or_else(|| {
                         de::Error::invalid_length(i, &self)
                     })?;
                 }
-                Ok(CCArray(arr))
+                Ok(TomlCcArray(arr))
             }
         }
         deserializer.deserialize_seq(CcVisitor)
@@ -87,7 +120,9 @@ pub struct TomlProgram {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    cc: CCArray,
+    cc: TomlCcArray,
+    #[serde(default)]
+    tuning: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -99,9 +134,33 @@ pub struct ProgramFile {
 struct TomlOrderConfig {
     patch_order: Vec<String>,
 }
-// ---------------------------------------------------------------------------
-// Loading & merging
-// ---------------------------------------------------------------------------
+
+// loading and building functions:
+pub fn load_global_config() -> Option<GlobalConfig> {
+    let path = "midi_config/midi.toml";
+    let default_config = GlobalConfig::default();
+
+    match std::fs::read_to_string(path) {
+        Ok(text) => {
+            match toml::from_str::<GlobalConfigToml>(&text) {
+                Ok(cfg) => Some(GlobalConfig {
+                    cc_mappings: cfg.global.cc_mappings
+                        .unwrap_or(default_config.cc_mappings),
+                    voice_stealing: cfg.global.voice_stealing.unwrap_or(default_config.voice_stealing),
+                    voice_release: cfg.global.voice_release.unwrap_or(default_config.voice_release),
+                }),
+                Err(e) => {
+                    eprintln!("Warning: failed to parse midi.toml: {}. Using defaults.", e);
+                    Some(default_config)
+                }
+            }
+        }
+        Err(_) => {
+            eprintln!("midi.toml not found, using default config.");
+            Some(default_config)
+        }
+    }
+}
 
 fn load_program_file(path: &str) -> Result<Vec<TomlProgram>, Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path)?;
@@ -110,7 +169,6 @@ fn load_program_file(path: &str) -> Result<Vec<TomlProgram>, Box<dyn std::error:
 }
 
 /// Load multiple TOML files, merge duplicates (last definition wins for CC and name).
-
 pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
     let mut all_programs = Vec::new();
     let mut used_names: HashSet<String> = HashSet::new();
@@ -140,6 +198,7 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
                 function: prog.function,
                 name: Some(display_name),
                 cc: prog.cc,
+                tuning: prog.tuning,
             });
         }
     }
@@ -158,16 +217,32 @@ pub fn build_patch_table(programs: &[TomlProgram]) -> PatchTable {
             Some(&b) => b,
             None => {
                 eprintln!(
-                    "Unknown function '{}' for program '{}', skipping",
+                    "Unknown function '{}' for program '{}', skipping {:?}",
                     prog.function,
-                    prog.name.as_deref().unwrap_or(&prog.function)
+                    prog.name.as_deref().unwrap_or(&prog.function),
+                    prog.tuning,
                 );
                 continue;
             }
         };
+
+        let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
+            .map(|e| (e.name, e.tuner))
+            .collect();
+        let tuner = if let Some(ref tuning_name) = prog.tuning {
+            match tuner_map.get(tuning_name.as_str()) {
+                Some(&t) => t,
+                None => {
+                    eprintln!("Unknown tuning '{}', using default", tuning_name);
+                    midi_hz
+                }
+            }
+        } else {
+            midi_hz
+        };
         let cc = prog.cc.0; // [u8; 4]
         let name = prog.name.clone().unwrap_or_else(|| prog.function.clone());
-        let def = (name, builder.into_speaker_def(), cc);
+        let def = (name, builder.into_speaker_def(), cc, tuner);
         entries.push(def);
     }
     PatchTable::new(entries)
@@ -181,7 +256,7 @@ pub fn get_patch_table_from_toml() -> PatchTable {
 
     let table = build_patch_table(&all_programs);
     println!("Loaded {} programs:", &table.entries.len());
-    for (i, (name, _, _)) in table.entries.iter().enumerate() {
+    for (i, (name, _, _, _)) in table.entries.iter().enumerate() {
         println!("  {}: {name}", i + 1);
     }
     table

@@ -1,4 +1,5 @@
-use crate::config_builder::ENCODER_COUNT;
+use crate::config_builder::CcValuesArray;
+use crate::tunings::TunerBuilder;
 use crate::{SharedMidiState, SynthFunc};
 use fundsp::{
     math::{clamp01, xerp},
@@ -30,17 +31,6 @@ macro_rules! register_sound {
                 builder: $builder as fn(&SharedMidiState) -> Box<dyn AudioUnit>,
             }
         }
-    };
-}
-
-#[macro_export]
-/// Convenience macro to build a `PatchTable` struct. Given a sequence of tuples of `&str` objects
-/// and `SynthFunc` objects, it returns a proper `PatchTable`.
-macro_rules! patch_table {
-    ($( ($name:expr, $def:expr) ),* $(,)?) => {
-        PatchTable::new(vec![
-            $( ($name.to_owned(), $def.into_speaker_def()) ),*
-        ])
     };
 }
 
@@ -84,7 +74,7 @@ where
 }
 
 /// convenience type for a Program Table item with name and SpeakerDef.
-pub type PatchTableItem = (String, SpeakerDef, [f32; ENCODER_COUNT]);
+pub type PatchTableItem = (String, SpeakerDef, CcValuesArray, TunerBuilder);
 
 /// Struct containing all the entries from which you can choose your synths.
 pub struct PatchTable {
@@ -95,6 +85,7 @@ impl PatchTable {
     pub fn new(entries: Vec<PatchTableItem>) -> Self {
         Self { entries }
     } }
+
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.
 pub fn simple_sound(state: &SharedMidiState, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {

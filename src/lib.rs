@@ -31,7 +31,7 @@
 pub mod config_builder;
 mod effects;
 pub mod io;
-pub mod sound_builders;
+pub mod patch_builders;
 pub mod sounds;
 pub mod tunings;
 mod instruments;

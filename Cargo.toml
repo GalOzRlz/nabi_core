@@ -26,4 +26,3 @@ fastrand = "2.4.1"
 inventory = "0.3.24"
 serde = { version = "1", features = ["derive"] }
 toml = "1.1.2"
-midi_fundsp = "0.8.0"
