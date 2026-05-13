@@ -34,11 +34,11 @@ macro_rules! register_sound {
 }
 
 #[macro_export]
-/// Convenience macro to build a `ProgramTable` struct. Given a sequence of tuples of `&str` objects
-/// and `SynthFunc` objects, it returns a proper `ProgramTable`.
+/// Convenience macro to build a `PatchTable` struct. Given a sequence of tuples of `&str` objects
+/// and `SynthFunc` objects, it returns a proper `PatchTable`.
 macro_rules! patch_table {
     ($( ($name:expr, $def:expr) ),* $(,)?) => {
-        ProgramTable::new(vec![
+        PatchTable::new(vec![
             $( ($name.to_owned(), $def.into_speaker_def()) ),*
         ])
     };
@@ -84,15 +84,15 @@ where
 }
 
 /// convenience type for a Program Table item with name and SpeakerDef.
-pub type ProgramTableItem = (String, SpeakerDef, [f32; ENCODER_COUNT]);
+pub type PatchTableItem = (String, SpeakerDef, [f32; ENCODER_COUNT]);
 
 /// Struct containing all the entries from which you can choose your synths.
-pub struct ProgramTable {
-    pub entries: Vec<ProgramTableItem>,
+pub struct PatchTable {
+    pub entries: Vec<PatchTableItem>,
 }
 
-impl ProgramTable {
-    pub fn new(entries: Vec<ProgramTableItem>) -> Self {
+impl PatchTable {
+    pub fn new(entries: Vec<PatchTableItem>) -> Self {
         Self { entries }
     } }
 

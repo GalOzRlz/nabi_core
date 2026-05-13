@@ -2,12 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use midi_fundsp::{
+use nabi_core::{
     io::{get_first_midi_device, start_input_thread, start_output_thread},
 };
 use midir::MidiInput;
 use read_input::{InputBuild, shortcut::input};
-use midi_fundsp::config_builder::get_patch_table_from_toml;
+use nabi_core::config_builder::get_patch_table_from_toml;
 
 fn main() -> anyhow::Result<()> {
     let mut midi_in = MidiInput::new("midir reading input")?;

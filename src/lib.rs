@@ -14,17 +14,17 @@
 //!   into `SynthFunc` functions with a variety of properties.
 //! * The `sounds` module contains `SynthFunc` functions that produce a variety of live sounds.
 //!
-//! The following [example programs](https://github.com/gjf2a/midi_fundsp/tree/master/examples) show how these components
+//! The following [example programs](https://github.com/gjf2a/nabi_core/tree/master/examples) show how these components
 //! interact to produce a working synthesizer:
-//! * [`basic_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/basic_demo.rs) opens the first MIDI
+//! * [`basic_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/basic_demo.rs) opens the first MIDI
 //! device it finds and plays a simple triangle waveform sound in response to MIDI events.
-//! * [`stereo_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/stereo_demo.rs) also opens the first MIDI
+//! * [`stereo_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/stereo_demo.rs) also opens the first MIDI
 //! device it finds. It plays notes below middle C through the left speaker using a Moog Pulse sound, and notes
 //! at Middle C or higher through the right speaker using a Moog Triangle sound.
-//! * [`choice_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/choice_demo.rs) allows the user to choose
+//! * [`choice_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/choice_demo.rs) allows the user to choose
 //! one from among all connected MIDI devices. The user can then choose any sound from the `sounds` module for the program's
 //! response to MIDI events.
-//! * [`just_tempered_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/just_tempered_demo.rs) shows how to
+//! * [`just_tempered_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/just_tempered_demo.rs) shows how to
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
 
@@ -35,13 +35,12 @@ pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
 mod instruments;
-pub mod community_sounds;
-use crate::config_builder::{CcValuesArray, DEFAULT_CC_ARRAY, ENCODER_COUNT};
+pub mod community_patches;
+use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::config_builder::GlobalConfig;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -180,8 +179,8 @@ impl SharedMidiState {
     }
 
     /// Set an incoming control change in an `Array<Shared>` where the array index matches control number.
-    pub fn set_control_change(&self, control_idx: u8, value: f32) {
-        self.control_change[control_idx as usize].set_value(value)
+    pub fn set_control_change(&self, control_idx: usize, value: f32) {
+        self.control_change[control_idx].set_value(value)
     }
 
     /// get a control change value based on its data index

@@ -1,8 +1,8 @@
-use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig, ENCODER_COUNT};
+use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
 use crate::sound_builders::SpeakerDef;
 use crate::{
-    control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
+    control_change_from, note_velocity_from, sound_builders::PatchTable, SharedMidiState, SynthFunc,
     NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
@@ -200,10 +200,11 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
-    patch_table: Arc<Mutex<ProgramTable>>,
+    patch_table: Arc<Mutex<PatchTable>>,
     config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
+    println!("{:?}", cnf);
     std::thread::spawn(move || {
         let mut player = StereoPlayer::<N>::new(patch_table, cnf);
         player.run_output(midi_msgs).unwrap();
@@ -222,7 +223,7 @@ pub fn start_output_thread<const N: usize>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_midi_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
-    patch_table: Arc<Mutex<ProgramTable>>,
+    patch_table: Arc<Mutex<PatchTable>>,
     config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
@@ -244,7 +245,7 @@ pub fn start_midi_output_thread<const N: usize>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_midi_output_thread_alt_tuning<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
-    patch_table: Arc<Mutex<ProgramTable>>,
+    patch_table: Arc<Mutex<PatchTable>>,
     midi_to_hz: fn(f32) -> f32,
     config: Option<GlobalConfig>,
 ) {
@@ -291,7 +292,7 @@ impl Speaker {
     }
 }
 trait DubleSpeaker<const N: usize> {
-    fn new(patch_table: Arc<Mutex<ProgramTable>>, config: GlobalConfig) -> Self;
+    fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self;
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
@@ -394,7 +395,7 @@ struct StereoPlayer<const N: usize> {
 }
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
-    fn new(patch_table: Arc<Mutex<ProgramTable>>, config: GlobalConfig) -> Self {
+    fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self {
         let cc_array_values = patch_table.clone().lock().unwrap().entries[0].2;
         let center_source =
             SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config, cc_array_values);
@@ -416,7 +417,7 @@ impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
 }
 
 /// Presents a list of items to be selected via console input. Used in multiple
-/// [example](https://github.com/gjf2a/midi_fundsp/tree/master/examples) programs.
+/// [example](https://github.com/gjf2a/nabi_core/tree/master/examples) programs.
 pub fn console_choice_from<T, F: Fn(&T) -> &str>(
     prompt: &str,
     choices: &Vec<T>,
@@ -492,7 +493,7 @@ struct SingleSourcePlayer<const N: usize> {
     recent_pitches: [Option<u8>; N],
     synth_func: SynthFunc,
     master_volume: Shared,
-    patch_table: Arc<Mutex<ProgramTable>>,
+    patch_table: Arc<Mutex<PatchTable>>,
     speaker: Speaker,
     config: GlobalConfig,
     global_fx_cc_idx_1: usize,
@@ -502,14 +503,13 @@ struct SingleSourcePlayer<const N: usize> {
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
-    fn new(patch_table: Arc<Mutex<ProgramTable>>, speaker: Speaker, config: GlobalConfig, cc_array: [f32;  ENCODER_COUNT]) -> Self {
+    fn new(patch_table: Arc<Mutex<PatchTable>>, speaker: Speaker, config: GlobalConfig, cc_array: CcValuesArray) -> Self {
         let synth_func = {
             let patch_table = patch_table.lock().unwrap();
             def_to_synth(&speaker, patch_table.entries[0].1.clone())
         };
-        let shared_midi_state = SharedMidiState::new(config.cc_mappings, cc_array);
         Self {
-            states: [(); N].map(|_| shared_midi_state.clone()),
+            states: [(); N].map(|_| SharedMidiState::new(config.cc_mappings, cc_array)),
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
             recent_pitches: [None; N],
@@ -522,6 +522,14 @@ impl<const N: usize> SingleSourcePlayer<N> {
             global_fx_cc_idx_2: config.cc_mappings[1],
             global_fx_cc_idx_3: config.cc_mappings[2],
             global_fx_cc_idx_4: config.cc_mappings[3],
+        }
+    }
+
+    fn set_cc_start_values(&self, cc_array: CcValuesArray) {
+        for state in self.states.iter() {
+            for (cc, val) in self.config.cc_mappings.into_iter().zip(cc_array.into_iter()) {
+                state.set_control_change(cc, val);
+            }
         }
     }
 
@@ -556,7 +564,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 (sound * vol) >> eq_2_mono(
                         self.global_fx_cc_idx_3.clone(),
                         self.global_fx_cc_idx_4.clone(),
-                        0.5,
+                        0.3,
                         &self.states[0],
                     ) >> split::<U2>()
             }
@@ -565,7 +573,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 (sound * vol) >> eq_2_stereo(
                         self.global_fx_cc_idx_3.clone(),
                         self.global_fx_cc_idx_4.clone(),
-                        0.5,
+                        0.3,
                         &self.states[0],
                     )
             }
@@ -594,18 +602,18 @@ impl<const N: usize> SingleSourcePlayer<N> {
                     self.bend(*bend);
                 }
                 ChannelVoiceMsg::ProgramChange { program } => {
-                    let def = {
-                        let patch_table = self.patch_table.lock().unwrap();
-                        patch_table.entries[*program as usize].1.clone()
+                    let (def, cc_vals) = {
+                        let patch_table = &self.patch_table.lock().unwrap().entries[*program as usize];
+                        (patch_table.1.clone(), patch_table.2.clone())
                     };
-                    self.change_synth(def);
+                    self.change_synth(def, cc_vals);
                     return Some(RelayedMessage::SynthChange);
                 }
                 ChannelVoiceMsg::ControlChange {
                     control: CC { control, value },
                 } => {
                     for state in self.states.iter_mut() {
-                        state.set_control_change(*control, *value as f32 / 127.0);
+                        state.set_control_change(*control as usize, *value as f32 / 127.0);
                     }
                 }
                 _ => {}
@@ -628,6 +636,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
     fn find_next_state(&mut self) -> usize {
         for i in self.next.iter() {
             if self.recent_pitches[i.a()].is_none() {
+                println!("adding new voice!");
                 return self.claim_state(i);
             }
         }
@@ -637,7 +646,9 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
         self.release(self.next.a());
+        println!("Recent pitches state after steal: {:?}", self.recent_pitches);
         self.claim_state(self.next)
+
     }
 
     fn claim_state(&mut self, state: ModNumC<usize, N>) -> usize {
@@ -652,6 +663,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
+        println!("recent pitches: {:?}", self.recent_pitches);
     }
 
     fn off(&mut self, pitch: u8) {
@@ -663,9 +675,10 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
     }
 
-    fn change_synth(&mut self, def: SpeakerDef) {
+    fn change_synth(&mut self, def: SpeakerDef, cc_values_array: CcValuesArray) {
         self.all_sounds_off();
-        self.synth_func = def_to_synth(&self.speaker, def);
+        self.synth_func = def_to_synth(&self.speaker, def.clone());
+        self.set_cc_start_values(cc_values_array)
     }
 
     fn bend(&mut self, bend: u16) {

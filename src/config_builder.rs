@@ -1,7 +1,7 @@
+use crate::sound_builders::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
+use serde::{de::{self, Visitor}, Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use crate::sound_builders::{IntoSpeakerDef, ProgramTable, SoundBuilder, PatchEntry};
-use serde::{Deserialize, Deserializer, de::{self, Visitor}};
 use std::fmt;
 
 pub const ENCODER_COUNT: usize = 4;
@@ -39,7 +39,7 @@ impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
             voice_stealing: VoiceStealingConfig::LegatoLast,
-            voice_release: FreeVoiceStrategy::FollowADSR,
+            voice_release: FreeVoiceStrategy::ReleaseOnZero,
             cc_mappings: [74, 71, 76, 77], // todo: move to midi.toml, read from there!
         }
     }
@@ -61,7 +61,8 @@ impl<'de> Deserialize<'de> for CCArray {
         impl<'de> Visitor<'de> for CcVisitor {
             type Value = CCArray;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an array of 4 integers (0–255)")
+                let fmt = format!("an array of {} integers (0–255)", ENCODER_COUNT);
+                f.write_str(fmt.as_str())
             }
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where A: de::SeqAccess<'de>
@@ -94,6 +95,10 @@ pub struct ProgramFile {
     program: Vec<TomlProgram>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct TomlOrderConfig {
+    patch_order: Vec<String>,
+}
 // ---------------------------------------------------------------------------
 // Loading & merging
 // ---------------------------------------------------------------------------
@@ -141,7 +146,7 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
     all_programs
 }
 
-pub fn build_patch_table(programs: &[TomlProgram]) -> ProgramTable {
+pub fn build_patch_table(programs: &[TomlProgram]) -> PatchTable {
     // Lookup from name to raw builder pointer
     let builder_map: HashMap<&str, SoundBuilder> = inventory::iter::<PatchEntry>()
         .map(|e| (e.name, e.builder))
@@ -165,19 +170,71 @@ pub fn build_patch_table(programs: &[TomlProgram]) -> ProgramTable {
         let def = (name, builder.into_speaker_def(), cc);
         entries.push(def);
     }
-    ProgramTable::new(entries)
+    PatchTable::new(entries)
 }
 
-pub fn get_patch_table_from_toml() -> ProgramTable {
+pub fn get_patch_table_from_toml() -> PatchTable {
     let all_programs = load_all_programs(&[
-        "config/builtin.toml",
-        "config/community.toml",
+        "patches_config/builtin.toml",
+        "patches_config/community.toml",
     ]);
 
     let table = build_patch_table(&all_programs);
     println!("Loaded {} programs:", &table.entries.len());
     for (i, (name, _, _)) in table.entries.iter().enumerate() {
-        println!("  {i}: {name}")
+        println!("  {}: {name}", i + 1);
     }
     table
+}
+
+pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
+    // Attach original index to each entry, then drain.
+    let indexed: Vec<(usize, PatchTableItem)> = entries
+        .drain(..)
+        .enumerate()
+        .collect();
+
+    // Build lookup from name to the actual entry.
+    let mut name_to_entry: HashMap<String, (usize, PatchTableItem)> = HashMap::new();
+    for item in indexed {
+        name_to_entry.insert(item.1.0.clone(), item);
+    }
+
+    let mut new_entries = Vec::with_capacity(name_to_entry.len());
+    let mut used_indices = HashSet::new();
+
+    // Pick entries in the given order.
+    for name in order {
+        if let Some((idx, entry)) = name_to_entry.remove(name) {
+            new_entries.push(entry);
+            used_indices.insert(idx);
+        }
+    }
+
+    // Collect the remaining entries, sorted by original index.
+    let mut remaining: Vec<(usize, PatchTableItem)> = name_to_entry
+        .into_values()
+        .collect();
+    remaining.sort_by_key(|(idx, _)| *idx);
+    for (_, entry) in remaining {
+        new_entries.push(entry);
+    }
+
+    *entries = new_entries;
+}
+
+pub fn create_ordered_patch_table() -> PatchTable {
+    let mut patch_table = get_patch_table_from_toml();
+    if let Ok(text) = std::fs::read_to_string("patches_config/order.toml") {
+        if let Ok(ord_config) = toml::from_str::<TomlOrderConfig>(&text) {
+            eprintln!("Loaded ordered patch table:{:?}", ord_config.patch_order);
+            reorder_by_names(&mut patch_table.entries, &ord_config.patch_order);
+        } else {
+            eprintln!("Failed to parse order.toml inside toml, using default order");
+        }
+    }
+    else {
+        eprintln!("Failed to parse order.toml in read_to_string, using default order");
+    }
+    patch_table
 }

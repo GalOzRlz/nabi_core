@@ -1,11 +1,11 @@
 [package]
-name = "midi_fundsp"
-version = "0.8.0"
+name = "nabi_core"
+version = "0.1.0"
 edition = "2024"
 description = "Enables creation of live MIDI synthesizer software."
 readme = "README.md"
-homepage = "https://github.com/gjf2a/midi_fundsp"
-repository = "https://github.com/gjf2a/midi_fundsp"
+homepage = "https://github.com/gjf2a/nabi_core"
+repository = "https://github.com/gjf2a/nabi_core"
 license = "MIT OR Apache-2.0"
 keywords = ["music", "midi", "synthesizer", "synth", "audio"]
 categories = ["hardware-support", "multimedia::audio"]
@@ -26,3 +26,4 @@ fastrand = "2.4.1"
 inventory = "0.3.24"
 serde = { version = "1", features = ["derive"] }
 toml = "1.1.2"
+midi_fundsp = "0.8.0"

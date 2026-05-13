@@ -1,67 +1,9 @@
 use crate::instruments::{dirty_guitar, hit_comb_pipe, pluck_comb_string};
 use crate::sound_builders::*;
-use crate::{patch_table, register_sound, SharedMidiState};
+use crate::{register_sound, SharedMidiState};
 use fundsp::net::Net;
 use fundsp::prelude::{brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz, shape, AudioUnit, U2};
 use fundsp::prelude64::{constant, dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var, Atan};
-
-/// Returns a `ProgramTable` containing all prepared sounds in this file.
-// pub fn options() -> ProgramTable {
-//     patch_table![
-//         ("Simple Triangle", simple_triangle),
-//         ("Triangle", adsr_triangle),
-//         ("Organ", adsr_organ),
-//         ("Sine", adsr_sine),
-//         ("Saw", adsr_saw),
-//         ("Soft Saw", adsr_soft_saw),
-//         ("Square", adsr_square),
-//         ("Pulse", adsr_pulse),
-//         ("DSF Saw", adsr_dsf_saw),
-//         ("DSF Square", adsr_dsf_square),
-//         ("Moog Organ", moog_organ),
-//         ("Moog Saw", moog_saw),
-//         ("Moog Soft Saw", moog_soft_saw),
-//         ("Moog Square", moog_square),
-//         ("Moog Pulse", moog_pulse),
-//         ("Acoustic Grand Piano", acoustic_grand_piano),
-//         ("Xylophone", xylophone),
-//         ("Clavichord (Sharp)", clavichord_sharp),
-//         ("Clavichord (Soft)", clavichord_soft),
-//     ]
-// }
-//
-// /// Returns a `ProgramTable` containing sounds that are personal favorites of the crate author.
-// pub fn favorites() -> ProgramTable {
-//     patch_table![
-//         ("80s Beep", simple_triangle),
-//         ("Triangle", adsr_triangle),
-//         ("Organ", adsr_organ),
-//         ("Saw", adsr_saw),
-//         ("Soft Saw", adsr_soft_saw),
-//         ("Square", adsr_square),
-//         ("Pulse", adsr_pulse),
-//         ("Moog Organ", moog_organ),
-//         ("Moog Saw", moog_saw),
-//         ("Moog Square", moog_square),
-//         ("Moog Pulse", moog_pulse),
-//         ("Acoustic Grand Piano", acoustic_grand_piano),
-//         ("Xylophone", xylophone),
-//         ("Clavichord (Sharp)", clavichord_sharp),
-//         ("Clavichord (Soft)", clavichord_soft),
-//         ("KS Strings", harpsichord),
-//         ("Chorus Guiar", chorused_dirty_guitar)
-//     ]
-// }
-//
-// /// Returns a `ProgramTable` containing Moog sounds.
-// pub fn moogs() -> ProgramTable {
-//     patch_table![
-//         ("Moog Organ", moog_organ),
-//         ("Moog Pulse", moog_pulse),
-//         ("Moog Saw", moog_saw),
-//         ("Moog Square", moog_square)
-//     ]
-// }
 
 /// Returns an on-off Triangle wave.
 pub fn simple_triangle(state: &SharedMidiState) -> Box<dyn AudioUnit> {
@@ -325,7 +267,7 @@ pub fn chorused_dirty_guitar(state: &SharedMidiState) -> Box<dyn AudioUnit> {
         attack: 0.005,
         decay: 0.8,
         sustain: 1.0,
-        release: 0.2,
+        release: 0.5,
     };
     let base_pitch = state.bent_pitch();
     let lfo1 = sine_hz(3.0) * 0.0065;

@@ -2,16 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use midi_fundsp::config_builder::{get_patch_table_from_toml, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use midi_fundsp::io::start_midi_output_thread;
-use midi_fundsp::sound_builders::*;
-use midi_fundsp::{
-    io::{get_first_midi_device, start_midi_input_thread},
-    patch_table,
-    sounds::moog_organ,
-};
 use midir::MidiInput;
-use read_input::{InputBuild, shortcut::input};
+use nabi_core::config_builder::{get_patch_table_from_toml, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
+use nabi_core::io::start_midi_output_thread;
+use nabi_core::io::{get_first_midi_device, start_midi_input_thread};
+use read_input::{shortcut::input, InputBuild};
 
 fn main() -> anyhow::Result<()> {
     let mut config = GlobalConfig::default();
