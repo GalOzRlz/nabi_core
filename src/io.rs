@@ -1,5 +1,5 @@
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
+use crate::effects::{eq_2_mono, eq_2_stereo, master_tape_effect, master_limiter, master_reverb};
 use crate::patch_builder::{PatchTableItem, SpeakerDef};
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
@@ -474,6 +474,7 @@ struct SingleSourcePlayer<const N: usize> {
     patch_table: Arc<Mutex<PatchTable>>,
     speaker: Speaker,
     config: GlobalConfig,
+    // todo: replace with function that reads from config? return to u8 values - convert in function to 0.0-1.0
     global_fx_cc_idx_1: usize,
     global_fx_cc_idx_2: usize,
     global_fx_cc_idx_3: usize,
@@ -566,7 +567,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         // need to figure out how to be able to hot swap master reverb with something else?
         mix >> master_limiter()
-            >> master_drift(self.global_fx_cc_idx_2.clone(), &self.states[0])
+            >> master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])
             >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
 
@@ -595,7 +596,9 @@ impl<const N: usize> SingleSourcePlayer<N> {
                     control: CC { control, value },
                 } => {
                     for state in self.states.iter_mut() {
+                        let v = *value as f32 / 127.0;
                         state.set_control_change(*control as usize, *value as f32 / 127.0);
+                        eprintln!("Control {} changed to {}", control, v);
                     }
                 }
                 _ => {}
@@ -618,7 +621,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
     fn find_next_state(&mut self) -> usize {
         for i in self.next.iter() {
             if self.recent_pitches[i.a()].is_none() {
-                println!("adding new voice!");
+                //println!("adding new voice!");
                 return self.claim_state(i);
             }
         }
@@ -628,7 +631,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
         self.release(self.next.a());
-        println!("Recent pitches state after steal: {:?}", self.recent_pitches);
+        //println!("Recent pitches state after steal: {:?}", self.recent_pitches);
         self.claim_state(self.next)
 
     }
@@ -645,7 +648,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
-        println!("recent pitches: {:?}", self.recent_pitches);
+        //println!("recent pitches: {:?}", self.recent_pitches);
     }
 
     fn off(&mut self, pitch: u8) {

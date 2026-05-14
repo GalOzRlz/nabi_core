@@ -1,3 +1,4 @@
+use crate::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use crate::SharedMidiState;
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
@@ -6,20 +7,28 @@ pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
     Net::wrap(Box::new(fx))
 }
 
+pub fn mono_to_stereo(net: Net) -> Net {
+    net.clone() | net
+}
+
 pub fn master_limiter() -> Net {
     let block = dcblock() >> limiter(0.002, 0.3);
     let master = multipass::<U2>() >> (block.clone() | block);
     to_net(master)
 }
 
-fn common_follow() -> An<Follow<f64>> {
-    follow(0.05)
+fn cc_smooth() -> An<Follow<f64>> {
+    follow(0.005)
+}
+
+fn sensitive_cc_smooth() -> An<Follow<f64>> {
+    follow(0.15)
 }
 
 /// Factory for stereo effects with wet/dry control via Net  (suitable for live Midi CC)
 fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     // Duplicate wet to stereo (0 inputs, 2 outputs)
-    let wet_amount =  wet_amount >> common_follow();
+    let wet_amount =  wet_amount >> cc_smooth();
     let wet_stereo = wet_amount.clone() | wet_amount.clone();
 
     let dry_mono = constant(1.0) - wet_amount;
@@ -40,23 +49,23 @@ pub fn prophet_lowpass_filter() -> Net {
 }
 
 pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
-    let cutoff_hrz = product(constant(max_cutoff_hz), cutoff_val) >> common_follow();
+    let cutoff_hrz = product(constant(max_cutoff_hz), cutoff_val) >> cc_smooth();
     Net::wrap(Box::new(
         (pass() | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0),
     ))
 }
 
 pub fn master_lowpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
-    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
-    let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> common_follow();
+    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> cc_smooth();
+    let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> cc_smooth();
     Net::wrap(Box::new(
         (pass() | cutoff_hrz >> follow(0.05_f32)) >> moog_q(q),
     ))
 }
 
 pub fn master_highpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
-    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
-    let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> common_follow();
+    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> cc_smooth();
+    let cutoff_hrz = product(constant(8_000.0), cutoff_val) >> cc_smooth();
     Net::wrap(Box::new(
         (pass() | cutoff_hrz >> follow(0.05_f32)) >> highpass_q(q),
     ))
@@ -81,58 +90,20 @@ pub fn eq_2_stereo(cc1: usize, cc2: usize, q: f32, shared_midi_state: &SharedMid
     multipass::<U2>() >> (lp.clone() | lp) >> (hp.clone() | hp)
 }
 
-pub fn pitch_drift_mono() -> Net {
-    // A very slow, shallow chorus. Only one voice, 100% wet.
-    // delay: base delay (seconds), depth: modulation depth (seconds),
-    // freq: LFO rate (Hz), mix: 1.0 = all wet (vibrato).
-    Net::wrap(Box::new(pure_chorus(
-        1,       // voices
-        0.009,   // base delay (15 ms)
-        0.003,   // depth (3 ms) – small = few cents of detune
-        2.45,    // LFO frequency (0.15 Hz) – very slow
-    )))
+pub fn tape_wow(depth: Net) -> Net {
+    let wow_ms_range = 0.025;
+    let flutter_ms_range = 0.0022;
+    let center = 0.030;
+    let wow_mod = smooth_random_lfo(0.6);
+    let flutter_mod = smooth_noise_constructor(smooth3, 9.0);
+    let total_wow = (wow_mod * depth.clone() + 2.0) * wow_ms_range;
+    let total_flutter = (flutter_mod * depth + 2.0) * flutter_ms_range;
+    let mix = (pass() | total_wow + total_flutter)  >> tap_linear(center-wow_ms_range-flutter_ms_range, center+wow_ms_range+flutter_ms_range);
+    Net::wrap(Box::new(mix.clone()|mix))
 }
 
-pub fn master_drift(cc: usize, shared_midi_state: &SharedMidiState) -> Net {
-    let wet_amount: Net = Net::wrap(Box::new(
-        var(&shared_midi_state.control_change[cc].clone())));
-    let drift = pitch_drift_mono();
-    let stereo = (drift.clone() | drift);
-    cc_controlled_wet_dry_fx(wet_amount, stereo)
-}
-
-pub fn pure_chorus(
-    seed: u64,
-    separation: f32,
-    variation: f32,
-    mod_frequency: f32,
-) -> An<impl AudioNode<Inputs =prelude::U1, Outputs =prelude::U1>> {
-    (pass()
-        | prelude::lfo(move |t| {
-        (
-            lerp11(
-                separation,
-                separation + variation,
-                fractal_noise(seed, 8, 0.45, t * mod_frequency),
-            ),
-            lerp11(
-                separation * 2.0,
-                separation * 2.0 + variation,
-                fractal_noise(hash1(seed), 8, 0.45, t * (mod_frequency + 0.02)),
-            ),
-            lerp11(
-                separation * 3.0,
-                separation * 3.0 + variation,
-                fractal_noise(hash2(seed), 8, 0.45, t * (mod_frequency + 0.04)),
-            ),
-            lerp11(
-                separation * 4.0,
-                separation * 4.0 + variation,
-                fractal_noise(hash1(seed ^ 0xfedcba), 8, 0.45, t * (mod_frequency + 0.06)),
-            ),
-        )
-    })
-        .interval(0.01))
-        >> fundsp::prelude::multitap::<fundsp::prelude::U4>(separation, separation * 4.0 + variation)
-        * fundsp::prelude::dc(0.2)
+pub fn master_tape_effect(cc: usize, shared_midi_state: &SharedMidiState) -> Net {
+    let depth: Net = Net::wrap(Box::new(
+        var(&shared_midi_state.control_change[cc].clone()))) >> sensitive_cc_smooth();
+    tape_wow(depth)
 }

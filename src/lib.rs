@@ -37,6 +37,7 @@ pub mod tunings;
 mod instruments;
 pub mod community_patches;
 mod patch_helpers;
+mod modulators;
 
 use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;
