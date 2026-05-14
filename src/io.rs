@@ -1,5 +1,5 @@
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
+use crate::effects::{eq_2_mono, eq_2_stereo, master_tape_effect, master_limiter, master_reverb};
 use crate::patch_builder::{PatchTableItem, SpeakerDef};
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
@@ -474,6 +474,7 @@ struct SingleSourcePlayer<const N: usize> {
     patch_table: Arc<Mutex<PatchTable>>,
     speaker: Speaker,
     config: GlobalConfig,
+    // todo: replace with function that reads from config?
     global_fx_cc_idx_1: usize,
     global_fx_cc_idx_2: usize,
     global_fx_cc_idx_3: usize,
@@ -566,7 +567,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         // need to figure out how to be able to hot swap master reverb with something else?
         mix >> master_limiter()
-            >> master_drift(self.global_fx_cc_idx_2.clone(), &self.states[0])
+            >> master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])
             >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
 
