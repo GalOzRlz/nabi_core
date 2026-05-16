@@ -1,7 +1,10 @@
+use std::f32::consts::LN_2;
+use std::f64::consts::{PI};
 use crate::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use crate::SharedMidiState;
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
+use crate::eqs::master_lowpass;
 
 pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
     Net::wrap(Box::new(fx))
@@ -17,7 +20,7 @@ pub fn master_limiter() -> Net {
     to_net(master)
 }
 
-fn cc_smooth() -> An<Follow<f64>> {
+pub(crate) fn cc_smooth() -> An<Follow<f64>> {
     follow(0.005)
 }
 
@@ -46,21 +49,6 @@ fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32) -> Net {
 pub fn prophet_lowpass_filter() -> Net {
     Net::wrap(Box::new(
     !butterpass() >> butterpass()))
-}
-
-pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
-    let cutoff_hrz = product(constant(max_cutoff_hz), cutoff_val) >> cc_smooth();
-    Net::wrap(Box::new(
-        (pass() | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0),
-    ))
-}
-
-pub fn master_lowpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
-    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> cc_smooth();
-    let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> cc_smooth();
-    Net::wrap(Box::new(
-        (pass() | cutoff_hrz >> follow(0.05_f32)) >> moog_q(q),
-    ))
 }
 
 pub fn master_highpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
@@ -106,4 +94,53 @@ pub fn master_tape_effect(cc: usize, shared_midi_state: &SharedMidiState) -> Net
     let depth: Net = Net::wrap(Box::new(
         var(&shared_midi_state.control_change[cc].clone()))) >> sensitive_cc_smooth();
     tape_wow(depth)
+}
+
+pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
+    let max_delay = 0.1; // 100 ms – supports grain rates down to ~10 Hz for octave shifts
+    let freq_hz= freq_hz.clamp(20.0, 100.0);
+    let ratio = (pitch_st * LN_2 * 1.0).exp();   // 2.0 for +12, 0.5 for -12
+    let depth_mag = ((ratio - 1.0).abs() / freq_hz)
+        .min(max_delay  * 0.999);
+    let min_delay = max_delay - depth_mag;
+
+    let phasor = lfo(move |t: f64| {
+        let phase = (t * freq_hz as f64).fract();
+        phase
+    });
+
+    // Two candidate delay modulations:
+    // - up_delay: decreasing delay → pitch up
+    // - down_delay: increasing delay → pitch down
+    let up_delay = dc(max_delay) - (phasor.clone() * dc(depth_mag ));
+    let down_delay = dc(min_delay) + (phasor * dc(depth_mag ));
+
+    // Select which delay to use based on sign of pitch_st
+    let control = dc(if pitch_st >= 0.0 { 1.0 } else { 0.0 });
+    let mod_sig = up_delay * control.clone() + down_delay * (dc(1.0) - control);
+
+    let amp_env = lfo(move |t: f64| {
+        let phase = (t * freq_hz as f64).fract();
+        0.5 - 0.5 * (2.0 * PI * phase).cos()
+    });
+
+    // Apply the modulated delay line
+    let shifted = (pass() | mod_sig) >> tap(min_delay, max_delay);
+
+    let shifted_env = shifted * amp_env;
+
+    // Smooth with short decay delay
+    let feedback_line = feedback(delay(0.003) * 0.5);
+
+    // Dry/wet mix with feedback on wet path
+    let dry = pass() * dc(1.0 - wet_amt);
+    let wet = shifted_env >> feedback_line * dc(wet_amt);
+    to_net(dry & wet)
+}
+
+pub fn master_frequency_shifter(pitch_st: f32, freq_hz: f32, cc: usize, shared_midi_state: &SharedMidiState) -> Net {
+    let depth: Net = Net::wrap(Box::new(
+        var(&shared_midi_state.control_change[cc].clone()))) >> sensitive_cc_smooth();
+    let ps = pitch_shifter(pitch_st, freq_hz, 1.0);
+    cc_controlled_wet_dry_fx(depth, ps)
 }

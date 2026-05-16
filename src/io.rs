@@ -1,5 +1,6 @@
+use std::ops::Shr;
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::{eq_2_mono, eq_2_stereo, master_tape_effect, master_limiter, master_reverb};
+use crate::effects::{master_tape_effect, master_limiter, master_reverb};
 use crate::patch_builder::{PatchTableItem, SpeakerDef};
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
@@ -26,6 +27,10 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
+use oximedia_effects::stereo_widener::WidenerMode;
+use oximedia_effects::stereo_widener::WidenerMode::HaasDelay;
+use crate::eqs::{cc_eq_2_mono, cc_eq_2_stereo};
+use crate::oximedia_effects::stereo_widener;
 use crate::tunings::TunerBuilder;
 
 #[derive(Clone, Debug)]
@@ -547,26 +552,22 @@ impl<const N: usize> SingleSourcePlayer<N> {
         let mix = match sound.outputs() {
             1 => {
                 let vol = var(&self.master_volume);
-                (sound * vol) >> eq_2_mono(
-                        self.global_fx_cc_idx_3.clone(),
-                        self.global_fx_cc_idx_4.clone(),
-                        0.3,
-                        &self.states[0],
-                    ) >> split::<U2>()
+                (sound * vol)  >> split::<U2>()
             }
             2 => {
                 let vol = var(&self.master_volume);
-                (sound * vol) >> eq_2_stereo(
-                        self.global_fx_cc_idx_3.clone(),
-                        self.global_fx_cc_idx_4.clone(),
-                        0.3,
-                        &self.states[0],
-                    )
+                (sound * vol)
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
         // need to figure out how to be able to hot swap master reverb with something else?
         mix >> master_limiter()
+            >> cc_eq_2_stereo(
+            self.global_fx_cc_idx_3.clone(),
+            self.global_fx_cc_idx_4.clone(),
+            0.3,
+            &self.states[0])
+            //>> stereo_widener(0.4, HaasDelay)
             >> master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])
             >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
