@@ -4,6 +4,7 @@ use fundsp::combinator::An;
 use fundsp::prelude64::*;
 use std::f32::consts::{LN_2};
 use std::f64::consts::PI;
+use inventory::Node;
 
 pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
     Net::wrap(Box::new(fx))
@@ -117,6 +118,7 @@ pub fn pitch_shifter() -> Net {
     to_net(output)
 }
 
+
 /// Pitch shifter using a modulated delay line (Doppler effect).
 ///
 /// # Arguments
@@ -127,8 +129,7 @@ pub fn pitch_shifter() -> Net {
 /// # Note
 /// For a full octave shift (±12 semitones) at low grain rates (e.g., 20 Hz),
 /// you may need to increase `max_delay` (see constant below).
-pub fn frequency_shifter(freq_hz: f32, wet_amt: f32, shared_midi_state: SharedMidiState) -> Net {
-    let pitch_st =  1.0
+pub fn frequency_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
     let max_delay = 0.1; // 100 ms – supports grain rates down to ~10 Hz for octave shifts
 
     let ratio = (pitch_st * LN_2 * 1.0).exp();   // 2.0 for +12, 0.5 for -12
