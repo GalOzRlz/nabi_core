@@ -94,7 +94,6 @@ pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
         .min(max_delay  * 0.999);
     let min_delay = max_delay - depth_mag;
 
-    // Rising sawtooth LFO (0 → 1) – same for both directions
     let phasor = lfo(move |t: f64| {
         let phase = (t * freq_hz as f64).fract();
         phase
@@ -117,6 +116,7 @@ pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
 
     // Apply the modulated delay line
     let shifted = (pass() | mod_sig) >> tap(min_delay, max_delay);
+
     let shifted_env = shifted * amp_env;
 
     // Smooth with short decay delay
@@ -132,3 +132,4 @@ pub fn master_frequency_shifter(pitch_st: f32, freq_hz: f32, cc: usize, shared_m
     let p_s = pitch_shifter(pitch_st, freq_hz, 1.0);
     cc_controlled_wet_dry_fx(p_s, cc, shared_midi_state)
 }
+

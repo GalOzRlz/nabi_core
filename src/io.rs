@@ -1,3 +1,4 @@
+use std::ops::Shr;
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{master_tape_effect, master_limiter, master_reverb};
 use crate::patch_builder::{PatchTableItem, SpeakerDef};
@@ -26,7 +27,10 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
+use oximedia_effects::stereo_widener::WidenerMode;
+use oximedia_effects::stereo_widener::WidenerMode::HaasDelay;
 use crate::eqs::{cc_eq_2_mono, cc_eq_2_stereo};
+use crate::oximedia_effects::stereo_widener;
 use crate::tunings::TunerBuilder;
 
 #[derive(Clone, Debug)]
@@ -563,6 +567,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             self.global_fx_cc_idx_4.clone(),
             0.3,
             &self.states[0])
+            //>> stereo_widener(0.4, HaasDelay)
             >> master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])
             >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }

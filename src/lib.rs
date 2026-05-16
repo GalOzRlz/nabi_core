@@ -39,6 +39,8 @@ pub mod community_patches;
 mod patch_helpers;
 mod modulators;
 mod eqs;
+mod effects_builders;
+mod oximedia_effects;
 
 use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;
