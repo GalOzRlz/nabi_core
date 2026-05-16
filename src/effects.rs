@@ -141,7 +141,6 @@ pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
 pub fn master_frequency_shifter(pitch_st: f32, freq_hz: f32, cc: usize, shared_midi_state: &SharedMidiState) -> Net {
     let depth: Net = Net::wrap(Box::new(
         var(&shared_midi_state.control_change[cc].clone()))) >> sensitive_cc_smooth();
-    let p_s = pitch_shifter(pitch_st, freq_hz, 1.0);
-    cc_controlled_wet_dry_fx(depth, p_s)
+    let ps = pitch_shifter(pitch_st, freq_hz, 1.0);
+    cc_controlled_wet_dry_fx(depth, ps)
 }
-

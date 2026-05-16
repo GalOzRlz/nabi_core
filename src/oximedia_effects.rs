@@ -20,7 +20,7 @@ impl OxiStereoWidenerNode {
 // This is where we implement the FunDSP magic to make our struct a true AudioNode.
 impl AudioNode for OxiStereoWidenerNode {
     const ID: u64 = 42467;
-    type Inputs = U2; // Takes stereo input
+    type Inputs = U3; // Takes stereo input  + width variable
     type Outputs = U2; // Produces stereo output
 
     #[inline]
@@ -28,11 +28,14 @@ impl AudioNode for OxiStereoWidenerNode {
         // 1. Get the left and right samples from the input frame.
         let left = input[0];
         let right = input[1];
+        let width = input.get(3).copied().unwrap_or(1.2);
+        self.set_width(width);
         let (new_left, new_right) = self.inner.process_sample(left, right);
         [new_left, new_right].into()
     }
 }
 
-pub fn stereo_widener(width: f32, mode: WidenerMode) -> An<OxiStereoWidenerNode> {
+fn stereo_widener(width: f32, mode: WidenerMode) -> An<OxiStereoWidenerNode> {
     An(OxiStereoWidenerNode::new(width, mode))
 }
+
