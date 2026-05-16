@@ -14,7 +14,7 @@ use cpal::{
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::U2;
+use fundsp::prelude::{multipass, U2};
 use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
@@ -558,14 +558,20 @@ impl<const N: usize> SingleSourcePlayer<N> {
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
         // need to figure out how to be able to hot swap master reverb with something else?
-        mix >> master_limiter()
-            >> cc_eq_2_stereo(
-            self.global_fx_cc_idx_3.clone(),
-            self.global_fx_cc_idx_4.clone(),
-            0.3,
-            &self.states[0])
-            //>> stereo_widener(0.4, HaasDelay)
-            >> master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])
+
+        let mut stereo_net =  Net::wrap(Box::new(multipass::<U2>()));
+        let net_content = vec![
+            master_limiter(),
+            cc_eq_2_stereo(
+                self.global_fx_cc_idx_3.clone(),
+                self.global_fx_cc_idx_4.clone(),
+                0.3,
+                &self.states[0]),
+            master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])];
+        for node in net_content.to_owned().into_iter() {
+            stereo_net = stereo_net >> node;
+        }
+        mix >> stereo_net
             >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
 
