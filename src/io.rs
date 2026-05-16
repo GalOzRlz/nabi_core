@@ -1,5 +1,5 @@
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::{master_tape_effect, master_limiter, master_reverb, frequency_shifter};
+use crate::effects::{master_tape_effect, master_limiter, master_reverb};
 use crate::patch_builder::{PatchTableItem, SpeakerDef};
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
@@ -557,7 +557,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
         // need to figure out how to be able to hot swap master reverb with something else?
-        mix >> master_limiter() >> ( frequency_shifter() | frequency_shifter() )
+        mix >> master_limiter()
             >> cc_eq_2_stereo(
             self.global_fx_cc_idx_3.clone(),
             self.global_fx_cc_idx_4.clone(),

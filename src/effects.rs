@@ -29,7 +29,10 @@ fn sensitive_cc_smooth() -> An<Follow<f64>> {
 }
 
 /// Factory for stereo effects with wet/dry control via Net  (suitable for live Midi CC)
-fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
+fn cc_controlled_wet_dry_fx(effect: Net, cc_idx: usize, shared_midi_state: &SharedMidiState) -> Net {
+    let wet_amount: Net = Net::wrap(Box::new(
+        var(&shared_midi_state.control_change[cc_idx].clone())
+    ));
     // Duplicate wet to stereo (0 inputs, 2 outputs)
     let wet_amount =  wet_amount >> cc_smooth();
     let wet_stereo = wet_amount.clone() | wet_amount.clone();
@@ -39,11 +42,6 @@ fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
 
     let pass = Net::wrap(Box::new(multipass::<U2>())); // U2 -> U2 identity
     (pass * dry_stereo) & (effect * wet_stereo)
-}
-
-fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32) -> Net {
-    let reverb = to_net(reverb_stereo(10.0, reverb_time, 0.4));
-    cc_controlled_wet_dry_fx(wet_amount, reverb)
 }
 
 pub fn prophet_lowpass_filter() -> Net {
@@ -64,7 +62,8 @@ pub fn master_reverb(global_fx_cc_idx_1: usize, shared_midi_state: &SharedMidiSt
     let reverb_amount: Net = Net::wrap(Box::new(
         var(&shared_midi_state.control_change[global_fx_cc_idx_1].clone())
     ));
-    cc_controlled_reverb(reverb_amount, 3.0)
+    let reverb = to_net(reverb_stereo(10.0, 3.0, 0.4));
+    cc_controlled_wet_dry_fx(reverb_amount, global_fx_cc_idx_1, shared_midi_state)
 }
 
 pub fn tape_wow(depth: Net) -> Net {
@@ -87,51 +86,9 @@ pub fn master_tape_effect(cc: usize, shared_midi_state: &SharedMidiState) -> Net
     tape_wow(depth)
 }
 
-pub fn pitch_shifter() -> Net {
-    let max_delay = 0.1;          // 30 ms grain buffer
-    let pitch_st = 12.0;            // +12 semitones = one octave up
-    let freq_hz = 40.0;              // grain rate in Hz (independent of pitch)     // 0..1
-    let wet_amt = 0.5;              // dry/wet mix
-
-    let ratio = (pitch_st.abs() * LN_2 / 12.0).exp();
-    let depth = (ratio - 1.0) / freq_hz;
-    let depth = depth.min(max_delay * 0.99).max(0.0); // ensure non‑negative
-    let depth_clamped = depth.min(max_delay * 0.99);
-    let min_delay = max_delay - depth_clamped;
-
-    let amp_env = lfo(move |t: f64| {
-        let phase = (t * freq_hz as f64).fract();
-        let win = 0.5 - 0.5 * (2.0 * PI * phase).cos();
-        win
-    });
-
-    let phasor = lfo(move |t: f64| {
-         (t * freq_hz as f64).fract()
-    });
-
-    let feedback = feedback(delay(0.003) * 0.6);
-    let mod_sig = dc(max_delay) - (phasor * depth);
-    let shifted = (pass() | mod_sig) >> tap(min_delay, max_delay);
-    let shifted_env = shifted * amp_env;
-
-    let output = (pass() * dc(1.0 - wet_amt)) & (shifted_env >> feedback * dc(wet_amt));
-    to_net(output)
-}
-
-
-/// Pitch shifter using a modulated delay line (Doppler effect).
-///
-/// # Arguments
-/// * `pitch_st` - Pitch shift in semitones (positive = up, negative = down)
-/// * `freq_hz`  - Grain rate (Hz). Lower values sound more granular/gritty.
-/// * `wet_amt`  - Wet/dry mix (0.0 = dry only, 1.0 = wet only)
-///
-/// # Note
-/// For a full octave shift (±12 semitones) at low grain rates (e.g., 20 Hz),
-/// you may need to increase `max_delay` (see constant below).
-pub fn frequency_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
+pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
     let max_delay = 0.1; // 100 ms – supports grain rates down to ~10 Hz for octave shifts
-
+    let freq_hz= freq_hz.clamp(20.0, 100.0);
     let ratio = (pitch_st * LN_2 * 1.0).exp();   // 2.0 for +12, 0.5 for -12
     let depth_mag = ((ratio - 1.0).abs() / freq_hz)
         .min(max_delay  * 0.999);
@@ -146,14 +103,13 @@ pub fn frequency_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
     // Two candidate delay modulations:
     // - up_delay: decreasing delay → pitch up
     // - down_delay: increasing delay → pitch down
-    let up_delay = dc(max_delay) - (phasor.clone() * dc(depth_mag as f32));
-    let down_delay = dc(min_delay) + (phasor * dc(depth_mag as f32));
+    let up_delay = dc(max_delay) - (phasor.clone() * dc(depth_mag ));
+    let down_delay = dc(min_delay) + (phasor * dc(depth_mag ));
 
     // Select which delay to use based on sign of pitch_st
     let control = dc(if pitch_st >= 0.0 { 1.0 } else { 0.0 });
     let mod_sig = up_delay * control.clone() + down_delay * (dc(1.0) - control);
 
-    // Amplitude envelope (Hann window) to smooth grain transitions
     let amp_env = lfo(move |t: f64| {
         let phase = (t * freq_hz as f64).fract();
         0.5 - 0.5 * (2.0 * PI * phase).cos()
@@ -163,11 +119,16 @@ pub fn frequency_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
     let shifted = (pass() | mod_sig) >> tap(min_delay, max_delay);
     let shifted_env = shifted * amp_env;
 
-    // Optional feedback echo (you can remove or adjust)
+    // Smooth with short decay delay
     let feedback_line = feedback(delay(0.003) * 0.5);
 
     // Dry/wet mix with feedback on wet path
     let dry = pass() * dc(1.0 - wet_amt);
     let wet = shifted_env >> feedback_line * dc(wet_amt);
     to_net(dry & wet)
+}
+
+pub fn master_frequency_shifter(pitch_st: f32, freq_hz: f32, cc: usize, shared_midi_state: &SharedMidiState) -> Net {
+    let p_s = pitch_shifter(pitch_st, freq_hz, 1.0);
+    cc_controlled_wet_dry_fx(p_s, cc, shared_midi_state)
 }
