@@ -17,7 +17,7 @@ pub struct PatchDef {
 
 /// Globally registered sound entries.
 pub struct SoundEntry {
-    /// Name used in TOML files (e.g. "fm_bell").
+    /// Name used in TOML files
     pub name: &'static str,
     pub builder: SoundBuilder,
 }

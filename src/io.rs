@@ -13,20 +13,15 @@ use cpal::{
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::U2;
+use fundsp::prelude::{multipass, U2};
 use fundsp::prelude64::split;
-use fundsp::{
-    net::Net,
-    prelude::AudioUnit,
-    prelude64::{shared, var},
-    shared::Shared,
-};
+use fundsp::{net::Net, prelude::AudioUnit, prelude64::{shared, var}, shared::Shared, DEFAULT_SR};
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use crate::effects::master_limiter;
+use crate::effects::{master_limiter, to_net};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -361,7 +356,7 @@ struct StereoPlayer<const N: usize> {
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self {
         let center_source =
-            SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config);
+            SingleSourcePlayer::<N>::new(patch_table.clone(), config);
         Self { center_source }
     }
 
@@ -457,14 +452,13 @@ struct SingleSourcePlayer<const N: usize> {
     synth_func: SynthFunc,
     master_volume: Shared,
     patch_table: Arc<Mutex<PatchTable>>,
-    speaker: Speaker,
     config: GlobalConfig,
     effects: PatchFxChain,
+    fx_net: Net,
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
     fn new(patch_table: Arc<Mutex<PatchTable>>,
-           speaker: Speaker,
            config: GlobalConfig,
         ) -> Self {
         let first_table = patch_table.clone().lock().unwrap().entries[0].clone();
@@ -476,18 +470,17 @@ impl<const N: usize> SingleSourcePlayer<N> {
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
             recent_pitches: [None; N],
-            speaker,
             synth_func,
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
             effects: first_table.effects,
+            fx_net: to_net(multipass::<U2>())
         };
         s.set_midi_to_hz(tuner);
+        s.fx_net =s.effects.assemble_net(&s.states[0]);
+        s.fx_net.set_sample_rate(DEFAULT_SR);
         s
-    }
-    fn assemble_master(&mut self, mix: Net) -> Net {
-        mix >> self.effects.assemble_net(&self.states[0])
     }
 
     fn set_cc_start_values(&self, cc_array: CcValuesArray) {
@@ -534,8 +527,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
-        let limited_mix = mix >> master_limiter();
-        self.assemble_master(limited_mix)
+        mix >> self.fx_net.clone()
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -631,7 +623,10 @@ impl<const N: usize> SingleSourcePlayer<N> {
         self.synth_func = patch_def.function;
         self.set_cc_start_values(patch_def.effects.initial_cc);
         self.set_midi_to_hz(patch_def.tuning);
-        self.effects = patch_def.effects
+        self.effects = patch_def.effects;
+        self.fx_net = self.effects.assemble_net(&self.states[0]);
+        self.fx_net.reset();
+        self.fx_net.set_sample_rate(DEFAULT_SR);
     }
 
     fn bend(&mut self, bend: u16) {
