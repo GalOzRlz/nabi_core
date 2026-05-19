@@ -28,26 +28,29 @@
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
 
+pub mod community_patches;
 pub mod config_builder;
 mod effects;
+mod effects_builders;
+mod eqs;
+mod factories;
+mod instruments;
 pub mod io;
+mod modulators;
+mod oximedia_effects;
 pub mod patch_builder;
+mod patch_helpers;
 pub mod sounds;
 pub mod tunings;
-mod instruments;
-pub mod community_patches;
-mod patch_helpers;
-mod modulators;
-mod eqs;
-mod effects_builders;
-mod oximedia_effects;
-mod factories;
 
-use crate::config_builder::{CcMapping, CcValuesArray};
+use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::effects::to_net;
+use crate::patch_builder::KnobGroup;
+use crate::patch_helpers::Adsr;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -55,8 +58,6 @@ use fundsp::prelude64::{adsr_live, shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::ControlChange::CC;
 use midi_msg::MidiMsg;
-use crate::effects::to_net;
-use crate::patch_helpers::Adsr;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -73,24 +74,29 @@ pub const CONTROL_OFF: f32 = -1.0;
 /// `SynthFunc` objects translate `SharedMidiState` values into [fundsp](https://crates.io/crates/fundsp) audio graphs.
 pub type SynthFunc = Arc<dyn Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync>;
 
-#[derive(Clone)]
 /// `SharedMidiState` objects represent as [fundsp `Shared` atomic variables](https://docs.rs/fundsp/latest/fundsp/shared/struct.Shared.html)
 /// the following MIDI events:
 /// * `Note On`
 /// * `Note Off`
 /// * `Pitch Bend`
+#[derive(Clone)]
 pub struct SharedMidiState {
     pitch: Shared,
     velocity: Shared,
     control: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
-    control_change: [Shared; 128],
-    cc_mapping: CcMapping,
-    adsr: Adsr
+
+    // NEW: dual knob groups
+    sound_knobs: [Shared; MAX_KNOBS_PER_GROUP],
+    effect_knobs: [Shared; MAX_KNOBS_PER_GROUP],
+    sound_knob_count: usize, // actual length from config
+    effect_knob_count: usize,
+
+    adsr: Adsr,
 }
 
-impl Default for  SharedMidiState {
+impl Default for SharedMidiState {
     fn default() -> Self {
         Self {
             pitch: Default::default(),
@@ -98,8 +104,10 @@ impl Default for  SharedMidiState {
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
-            control_change: core::array::from_fn(|_| Shared::new(0.0)),
-            cc_mapping: Default::default(),
+            sound_knobs: core::array::from_fn(|_| Shared::new(0.0)),
+            effect_knobs: core::array::from_fn(|_| Shared::new(0.0)),
+            sound_knob_count: 0,
+            effect_knob_count: 0,
             adsr: Default::default(),
         }
     }
@@ -107,40 +115,60 @@ impl Default for  SharedMidiState {
 
 impl Debug for SharedMidiState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let cc_vals: [f32; 128] = std::array::from_fn(|i| self.control_change[i].value());
         f.debug_struct("SharedMidiState")
             .field("pitch", &self.pitch.value())
             .field("velocity", &self.velocity.value())
             .field("control", &self.control.value())
             .field("pitch_bend", &self.pitch_bend.value())
-            .field("cc_values", &cc_vals)
             .finish()
     }
 }
 
 impl SharedMidiState {
-
-    pub fn new(cc_mapping: CcMapping, cc_array: CcValuesArray) -> Self {
+    pub fn new(
+        sound_knob_ccs: &[u8],
+        effect_knob_ccs: &[u8],
+        sound_init: &[f32],
+        effect_init: &[f32],
+    ) -> Self {
         let mut s = Self::default();
-        s.cc_mapping = cc_mapping;
-        s.set_ccs(cc_mapping, cc_array)
+        s.sound_knob_count = sound_knob_ccs.len().min(MAX_KNOBS_PER_GROUP);
+        s.effect_knob_count = effect_knob_ccs.len().min(MAX_KNOBS_PER_GROUP);
+        for i in 0..s.sound_knob_count {
+            let val = sound_init.get(i).copied().unwrap_or(0.0);
+            s.sound_knobs[i].set_value(val);
+        }
+        for i in 0..s.effect_knob_count {
+            let val = effect_init.get(i).copied().unwrap_or(0.0);
+            s.effect_knobs[i].set_value(val);
+        }
+        s
     }
-
 
     /// Returns n ADSR filter in a `Box`.
     pub fn boxed_adsr(&self) -> Box<dyn AudioUnit> {
         let control = self.control_var();
-        Box::new(control >> adsr_live(self.adsr.attack.value(), self.adsr.decay.value(), self.adsr.sustain.value(), self.adsr.release.value()))
+        Box::new(
+            control
+                >> adsr_live(
+                    self.adsr.attack.value(),
+                    self.adsr.decay.value(),
+                    self.adsr.sustain.value(),
+                    self.adsr.release.value(),
+                ),
+        )
     }
-    
-    pub fn set_ccs(self, cc_mapping: CcMapping, cc_array: CcValuesArray) -> Self {
-        for (cc_num, start_val) in cc_mapping
-            .into_iter()
-            .zip(cc_array.into_iter())
-        {
-            self.control_change[cc_num].set_value(start_val);
+    pub fn sound_knob(&self, idx: usize) -> An<Var> {
+        if idx < 1 || idx > self.sound_knob_count {
+            return var(&self.control);
+        } // fallback
+        var(&self.sound_knobs[idx - 1])
+    }
+    pub fn effect_knob(&self, idx: usize) -> An<Var> {
+        if idx < 1 || idx > self.effect_knob_count {
+            return var(&self.control);
         }
-        self
+        var(&self.effect_knobs[idx - 1])
     }
 
     /// Changes how MIDI notes are converted to pitches. Defaults to equal temperament.
@@ -199,25 +227,14 @@ impl SharedMidiState {
         ))
     }
 
-    /// Set an incoming control change in an `Array<Shared>` where the array index matches control number.
-    pub fn set_control_change(&self, control_idx: usize, value: f32) {
-        self.control_change[control_idx].set_value(value)
+    /// Get sound CC (1‑based index)
+    pub fn get_sound_control_change(&self, idx: usize) -> An<Var> {
+        self.sound_knob(idx)
     }
 
-    /// get a control change value based on its data index
-    fn control_change_var(&self, idx: usize) -> An<Var> {
-        var(&self.control_change[idx])
-    }
-
-
-    /// get a control change value based on the abstracted mapping of 1...N
-    pub fn get_control_change(&self, idx: usize) -> An<Var> {
-        let cc = self.cc_mapping[idx-1];
-        self.control_change_var(cc)
-    }
-
-    pub fn control_change_net(&self, idx: usize) -> Net {
-        to_net(self.get_control_change(idx))
+    /// Get effect CC (1‑based index)
+    pub fn get_effect_control_change(&self, idx: usize) -> An<Var> {
+        self.effect_knob(idx)
     }
 
     /// Encodes a MIDI `Note On` event as a positive gate signal
@@ -238,23 +255,6 @@ impl SharedMidiState {
     /// Converts MIDI pitch-bend message to +/- 1 semitone using [this algorithm](https://sites.uci.edu/camp2014/2014/04/30/managing-midi-pitchbend-messages/).
     pub fn bend(&self, bend: u16) {
         self.pitch_bend.set_value(pitch_bend_factor(bend));
-    }
-}
-
-/// If a given `MidiMsg` object is encapsulating a `ControlChange` it returns
-/// the control id and value values of that message.
-pub fn control_change_from(msg: &MidiMsg) -> Option<(u8, u8)> {
-    if let MidiMsg::ChannelVoice {
-        msg:
-            midi_msg::ChannelVoiceMsg::ControlChange {
-                control: CC { control, value },
-            },
-        ..
-    } = msg
-    {
-        Some((*control, *value))
-    } else {
-        None
     }
 }
 

@@ -1,28 +1,34 @@
-use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
+use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{master_limiter, to_net};
 use crate::effects_builders::PatchFxChain;
-use crate::patch_builder::PatchDef;
+use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::{
-    control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
-    NUM_MIDI_VALUES,
+    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, patch_builder::PatchTable,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
-    StreamConfig,
+    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::{multipass, shape, U2};
+use fundsp::prelude::{U2, multipass, shape};
 use fundsp::prelude64::split;
-use fundsp::{net::Net, prelude::AudioUnit, prelude64::{shared, var}, shared::Shared, DEFAULT_SR};
+use fundsp::{
+    DEFAULT_SR,
+    net::Net,
+    prelude::AudioUnit,
+    prelude64::{shared, var},
+    shared::Shared,
+};
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use read_input::{shortcut::input, InputBuild};
-use std::sync::{Arc, Mutex};
 use oximedia_effects::distortion::oversampler::DistortionKind::Tanh;
+use read_input::{InputBuild, shortcut::input};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -79,11 +85,6 @@ impl SynthMsg {
     /// Returns MIDI note and velocity information if pertinent
     pub fn note_velocity(&self) -> Option<(u8, u8)> {
         note_velocity_from(&self.msg)
-    }
-
-    /// Returns a control message index and its value
-    pub fn control_change(&self) -> Option<(u8, u8)> {
-        control_change_from(&self.msg)
     }
 }
 
@@ -185,7 +186,7 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
-    patch_table: Arc<Mutex<PatchTable>>,
+    patch_table: Arc<PatchTable>,
     config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
@@ -208,7 +209,7 @@ pub fn start_output_thread<const N: usize>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_midi_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
-    patch_table: Arc<Mutex<PatchTable>>,
+    patch_table: Arc<PatchTable>,
     config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
@@ -252,7 +253,7 @@ impl Speaker {
     }
 }
 trait DubleSpeaker<const N: usize> {
-    fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self;
+    fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self;
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
@@ -355,9 +356,8 @@ struct StereoPlayer<const N: usize> {
 }
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
-    fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self {
-        let center_source =
-            VoiceManager::<N>::new(patch_table.clone(), config);
+    fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
+        let center_source = VoiceManager::<N>::new(patch_table.clone(), config);
         Self { center_source }
     }
 
@@ -452,22 +452,46 @@ struct VoiceManager<const N: usize> {
     recent_pitches: [Option<u8>; N],
     synth_func: SynthFunc,
     master_volume: Shared,
-    patch_table: Arc<Mutex<PatchTable>>,
+    patch_table: Arc<PatchTable>,
     config: GlobalConfig,
     effects: PatchFxChain,
     fx_net: Net,
+    current_patch_num: usize,
+    sound_knobs: Vec<f32>,
+    effect_knobs: Vec<f32>,
+    cc_to_knob: HashMap<u8, (KnobGroup, usize)>, // CC → (group, 0‑based index)
 }
 
 impl<const N: usize> VoiceManager<N> {
-    fn new(patch_table: Arc<Mutex<PatchTable>>,
-           config: GlobalConfig,
-        ) -> Self {
-        let first_table = patch_table.clone().lock().unwrap().entries[0].clone();
-        let synth_func= first_table.function;
-        let cc_array = first_table.effects.initial_cc;
-        let tuner = first_table.tuning.clone();
+    fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
+        // Build CC → knob mapping
+        let mut cc_to_knob = HashMap::new();
+        for (i, &cc) in config.sound_knob_ccs.iter().enumerate() {
+            cc_to_knob.insert(cc, (KnobGroup::Sound, i));
+        }
+        for (i, &cc) in config.effect_knob_ccs.iter().enumerate() {
+            cc_to_knob.insert(cc, (KnobGroup::Effect, i));
+        }
+
+        let sound_len = config.sound_knob_ccs.len().max(1);
+        let effect_len = config.effect_knob_ccs.len().max(1);
+
+        let first_table = &patch_table.clone().entries[0]; // no .lock().unwrap()
+        let synth_func = first_table.function.clone();
+        let cc_array = first_table.effects.initial_cc.clone();
+        let tuner = first_table.tuning;
+
+        let states = [(); N].map(|_| {
+            SharedMidiState::new(
+                &config.sound_knob_ccs,
+                &config.effect_knob_ccs,
+                &cc_array,
+                &cc_array,
+            )
+        });
+
         let mut s = Self {
-            states: [(); N].map(|_| SharedMidiState::new(config.cc_mappings, cc_array)),
+            states,
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
             recent_pitches: [None; N],
@@ -475,21 +499,17 @@ impl<const N: usize> VoiceManager<N> {
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
-            effects: first_table.effects,
-            fx_net: to_net(multipass::<U2>())
+            effects: first_table.effects.clone(),
+            fx_net: to_net(multipass::<U2>()),
+            sound_knobs: vec![0.0; sound_len],
+            effect_knobs: vec![0.0; effect_len],
+            cc_to_knob,
+            current_patch_num: 1,
         };
         s.set_midi_to_hz(tuner);
-        s.fx_net =s.effects.assemble_net(&s.states[0]);
+        s.effects.assemble_net(&s.states[0]);
         s.fx_net.set_sample_rate(DEFAULT_SR);
         s
-    }
-
-    fn set_cc_start_values(&self, cc_array: CcValuesArray) {
-        for state in self.states.iter() {
-            for (cc, val) in self.config.cc_mappings.into_iter().zip(cc_array.into_iter()) {
-                state.set_control_change(cc, val);
-            }
-        }
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
@@ -520,7 +540,7 @@ impl<const N: usize> VoiceManager<N> {
         let mix = match sound.outputs() {
             1 => {
                 let vol = var(&self.master_volume);
-                (sound * vol)  >> split::<U2>()
+                (sound * vol) >> split::<U2>()
             }
             2 => {
                 let vol = var(&self.master_volume);
@@ -548,17 +568,39 @@ impl<const N: usize> VoiceManager<N> {
                     self.bend(*bend);
                 }
                 ChannelVoiceMsg::ProgramChange { program } => {
-                    let patch_table = self.patch_table.lock().unwrap().entries[*program as usize].clone();
-                    self.change_synth(patch_table);
+                    self.change_synth(program);
                     return Some(RelayedMessage::SynthChange);
                 }
                 ChannelVoiceMsg::ControlChange {
                     control: CC { control, value },
                 } => {
-                    for state in self.states.iter_mut() {
-                        let v = *value as f32 / 127.0;
-                        state.set_control_change(*control as usize, *value as f32 / 127.0);
-                        eprintln!("Control {} changed to {}", control, v);
+                    eprintln!("Control change from {:?} to {:?}", control, value);
+                    let norm = *value as f32 / 127.0;
+                    if let Some(&(group, idx)) = self.cc_to_knob.get(control) {
+                        match group {
+                            KnobGroup::Sound => {
+                                self.sound_knobs[idx] = norm;
+                                for state in self.states.iter_mut() {
+                                    state.sound_knobs[idx].set_value(norm);
+                                }
+                            }
+                            KnobGroup::Effect => {
+                                self.effect_knobs[idx] = norm;
+                                for state in self.states.iter_mut() {
+                                    state.effect_knobs[idx].set_value(norm);
+                                }
+                            }
+                        }
+                        // Print labels
+                        if let Some(prog) =
+                            self.patch_table.clone().entries.get(self.current_patch_num)
+                        {
+                            for lbl in &prog.knob_labels {
+                                if lbl.group == group && lbl.index == idx + 1 {
+                                    eprintln!("Knob {} {}: {}", idx + 1, lbl.label, value);
+                                }
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -593,7 +635,6 @@ impl<const N: usize> VoiceManager<N> {
         self.release(self.next.a());
         //println!("Recent pitches state after steal: {:?}", self.recent_pitches);
         self.claim_state(self.next)
-
     }
 
     fn claim_state(&mut self, state: ModNumC<usize, N>) -> usize {
@@ -620,14 +661,29 @@ impl<const N: usize> VoiceManager<N> {
         }
     }
 
-    fn change_synth(&mut self, patch_def: PatchDef) {
-        self.synth_func = patch_def.function;
-        self.set_cc_start_values(patch_def.effects.initial_cc);
-        self.set_midi_to_hz(patch_def.tuning);
-        self.effects = patch_def.effects;
-        self.fx_net = self.effects.assemble_net(&self.states[0]);
-        self.fx_net.reset();
-        self.fx_net.set_sample_rate(DEFAULT_SR);
+    fn change_synth(&mut self, program: &u8) {
+        let table = self.patch_table.clone();
+        if let Some(entry) = table.entries.get(*program as usize) {
+            self.synth_func = entry.function.clone();
+            self.effects = entry.effects.clone();
+            let tuner = entry.tuning;
+            self.set_midi_to_hz(tuner);
+            self.effects.assemble_net(&self.states[0]);
+            self.fx_net.set_sample_rate(DEFAULT_SR);
+            self.current_patch_num = *program as usize;
+            // Re-initialize knob values from the new program's initial_cc if desired.
+            for (i, &val) in self.effects.initial_cc.iter().enumerate() {
+                // only update effect knobs (the effect_knobs vector and state)
+                if i < self.effect_knobs.len() {
+                    self.effect_knobs[i] = val;
+                    for state in self.states.iter_mut() {
+                        if i < state.effect_knob_count {
+                            state.effect_knobs[i].set_value(val);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn bend(&mut self, bend: u16) {

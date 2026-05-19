@@ -1,9 +1,9 @@
+use crate::SharedMidiState;
 use fundsp::audiounit::AudioUnit;
 use fundsp::math::{clamp01, xerp};
 use fundsp::net::Net;
 use fundsp::prelude64::{adsr_live, envelope2, moog_q};
 use fundsp::shared::Shared;
-use crate::SharedMidiState;
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.
 pub fn simple_sound(state: &SharedMidiState, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {
@@ -24,7 +24,7 @@ pub struct Adsr {
 }
 impl Default for Adsr {
     fn default() -> Self {
-        Self { 
+        Self {
             attack: Shared::new(0.01),
             decay: Shared::new(0.3),
             sustain: Shared::new(0.6),
@@ -39,6 +39,5 @@ impl Adsr {
         self.decay.set_value(decay);
         self.sustain.set_value(sustain);
         self.release.set_value(release);
-        }
     }
-
+}
