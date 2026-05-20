@@ -1,8 +1,7 @@
-use crate::SharedMidiState;
-use crate::config_builder::{TomlEffectSection};
-use crate::effects::to_net;
+use crate::config_builder::TomlEffectSection;
 use crate::patch_builder::{KnobGroup, KnobLabel, ParamInfo};
-use fundsp::prelude::{U2, multipass};
+use crate::SharedMidiState;
+use fundsp::prelude::{multipass, U2};
 use fundsp::prelude64::{AudioUnit, Net};
 use std::collections::HashMap;
 use std::sync::Arc;
