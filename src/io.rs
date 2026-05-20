@@ -27,6 +27,12 @@ use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::collections::HashMap;
 use std::sync::Arc;
+use fastrand::u8;
+
+enum PatchButton {
+    Right,
+    Left
+}
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -500,7 +506,7 @@ impl<const N: usize> VoiceManager<N> {
             sound_knobs: vec![0.0; sound_len],
             effect_knobs: vec![0.0; effect_len],
             cc_to_knob,
-            current_patch_num: 1,
+            current_patch_num: 0,
         };
         s.set_midi_to_hz(tuner);
         s.effects.assemble_net(&s.states[0]);
@@ -563,7 +569,7 @@ impl<const N: usize> VoiceManager<N> {
                     self.bend(*bend);
                 }
                 ChannelVoiceMsg::ProgramChange { program } => {
-                    self.change_synth(program);
+                    self.change_patch(program);
                     return Some(RelayedMessage::SynthChange);
                 }
                 ChannelVoiceMsg::ControlChange {
@@ -589,7 +595,7 @@ impl<const N: usize> VoiceManager<N> {
                         }
                         // Print labels
                         if let Some(prog) =
-                            self.patch_table.clone().entries.get(self.current_patch_num)
+                            self.patch_table.clone().entries.get(self.current_patch_num as usize)
                         {
                             for lbl in &prog.knob_labels {
                                 if lbl.group == group && lbl.index == idx + 1 {
@@ -657,7 +663,25 @@ impl<const N: usize> VoiceManager<N> {
         }
     }
 
-    fn change_synth(&mut self, program: &u8) {
+    pub fn change_patch_button(&mut self, button: PatchButton) {
+        let offset = match button {
+            PatchButton::Right => 1,
+            PatchButton::Left => -1,
+        };
+
+        self.change_patch_with_offset(offset)
+    }
+    fn change_patch_with_offset(&mut self, offset: i32) {
+            let len = self.patch_table.entries.len();
+            if len == 0 {
+                return; // No patches, nothing to do
+            }
+            // Use modulo arithmetic for wrap-around
+            let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
+            self.current_patch_num = new_num as usize;
+        }
+
+    fn change_patch(&mut self, program: &u8) {
         let table = self.patch_table.clone();
         if let Some(entry) = table.entries.get(*program as usize) {
             self.synth_func = entry.function.clone();
