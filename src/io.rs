@@ -1,22 +1,21 @@
 use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::{master_limiter, to_net};
+use crate::effects::master_limiter;
 use crate::effects_builders::PatchFxChain;
-use crate::patch_builder::{KnobGroup, PatchDef};
+use crate::patch_builder::KnobGroup;
 use crate::{
-    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, patch_builder::PatchTable,
+    note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc, NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig,
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::{U2, multipass, shape};
+use fundsp::prelude::U2;
 use fundsp::prelude64::split;
 use fundsp::{
-    DEFAULT_SR,
     net::Net,
     prelude::AudioUnit,
     prelude64::{shared, var},
@@ -25,10 +24,9 @@ use fundsp::{
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use oximedia_effects::distortion::oversampler::DistortionKind::Tanh;
-use read_input::{InputBuild, shortcut::input};
+use read_input::{shortcut::input, InputBuild};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -455,7 +453,6 @@ struct VoiceManager<const N: usize> {
     patch_table: Arc<PatchTable>,
     config: GlobalConfig,
     effects: PatchFxChain,
-    fx_net: Net,
     current_patch_num: usize,
     sound_knobs: Vec<f32>,
     effect_knobs: Vec<f32>,
@@ -500,7 +497,6 @@ impl<const N: usize> VoiceManager<N> {
             patch_table,
             config: config.clone(),
             effects: first_table.effects.clone(),
-            fx_net: to_net(multipass::<U2>()),
             sound_knobs: vec![0.0; sound_len],
             effect_knobs: vec![0.0; effect_len],
             cc_to_knob,
@@ -508,7 +504,6 @@ impl<const N: usize> VoiceManager<N> {
         };
         s.set_midi_to_hz(tuner);
         s.effects.assemble_net(&s.states[0]);
-        s.fx_net.set_sample_rate(DEFAULT_SR);
         s
     }
 
@@ -548,7 +543,7 @@ impl<const N: usize> VoiceManager<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 (mono) or U2 (stereo)"),
         };
-        mix >> master_limiter() >> self.fx_net.clone() // add normalizer?
+        mix >> master_limiter() >> self.effects.net.clone() // add normalizer?
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -670,7 +665,6 @@ impl<const N: usize> VoiceManager<N> {
             let tuner = entry.tuning;
             self.set_midi_to_hz(tuner);
             self.effects.assemble_net(&self.states[0]);
-            self.fx_net.set_sample_rate(DEFAULT_SR);
             self.current_patch_num = *program as usize;
             // Re-initialize knob values from the new program's initial_cc if desired.
             for (i, &val) in self.effects.initial_cc.iter().enumerate() {
