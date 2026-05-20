@@ -243,7 +243,6 @@ pub fn build_patch_table(
             name: prog.name.clone(),
             tuning: tuner,
             effects: fx_chain,
-            sound_cc_map: Default::default(),
             initial_cc: vec![],
             knob_labels,
         };

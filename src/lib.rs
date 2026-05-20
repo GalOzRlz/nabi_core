@@ -75,8 +75,8 @@ pub const CONTROL_OFF: f32 = -1.0;
 pub type SynthFunc = Arc<dyn Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync >;
 #[derive(Clone)]
 struct SynthFactory {
-    builder: SoundBuilder,
-    config: toml::Table,
+    pub builder: SoundBuilder,
+    pub config: toml::Table,
 }
 
 impl SynthFactory {

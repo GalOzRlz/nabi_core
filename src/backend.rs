@@ -59,7 +59,7 @@ pub fn get_all_effects_meta() -> Vec<EffectMeta> {
 /// Start a WebSocket server on the given port that sends
 /// effect & sound metadata to every connecting client.
 pub fn start_meta_server(port: u16) {
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         let addr = format!("127.0.0.1:{port}");
         let listener = TcpListener::bind(&addr).expect("WebSocket bind failed");
         println!("Meta WebSocket listening on ws://{addr}");

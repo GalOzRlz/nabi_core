@@ -95,7 +95,6 @@ pub struct PatchDef {
     pub name: String,
     pub tuning: TunerBuilder,
     pub effects: FxChainFactory,
-    pub sound_cc_map: HashMap<String, usize>,
     pub initial_cc: Vec<f32>,
     pub knob_labels: Vec<KnobLabel>,       // includes both effect and sound labels
 }
