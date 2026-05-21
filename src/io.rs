@@ -278,7 +278,7 @@ trait DubleSpeaker<const N: usize> {
         let buffer_size = match buffer_size_range {
             // If the device reports a min/max range, pick a value in between
             SupportedBufferSize::Range { min, max } => {
-                let target = 1024; // Your desired size
+                let target = 1024; // make it configurable?
                 // Clamp the target to the valid range [min, max]
                 let chosen = target.clamp(*min, *max);
                 println!(
@@ -298,7 +298,7 @@ trait DubleSpeaker<const N: usize> {
         let config = cpal::StreamConfig {
             channels: default_config.channels(),
             sample_rate: default_config.sample_rate(),
-            buffer_size: buffer_size,
+            buffer_size,
         };
         match default_config.sample_format() {
             SampleFormat::F32 => self.run_synth::<f32>(midi_msgs, device, config.into()),
