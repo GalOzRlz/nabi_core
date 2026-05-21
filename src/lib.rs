@@ -87,7 +87,9 @@ impl SynthFactory {
         let registry: HashMap<&str, &SoundEntry> = inventory::iter::<SoundEntry>()
             .map(|e| (e.name, e))
             .collect();
-        let entry = registry.get(builder_func_name).unwrap();
+        let entry = registry
+            .get(builder_func_name)
+            .expect("synth with stated function name doesn't exist!");
         let builder = entry.builder.to_owned();
         let mut knob_labels = Vec::new();
         let mut knob_map = HashMap::new();

@@ -200,8 +200,8 @@ pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig
         // --- assemble PatchDef ---
         let patch_def = PatchDef {
             sound_factory: SynthFactory::new(
-                prog.name.as_str(),
-                prog.config.clone().unwrap(),
+                prog.function.as_str(),
+                prog.config.clone().unwrap_or_default(),
                 sound_cc_count,
             ),
             name: prog.name.clone(),
