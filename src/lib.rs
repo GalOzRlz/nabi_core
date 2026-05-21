@@ -144,7 +144,6 @@ pub struct SharedMidiState {
     fx_cc_vals: [Shared; MAX_KNOBS_PER_GROUP],
     sound_knob_count: usize, // actual length from config
     effect_cc_count: usize,
-
     adsr: Adsr,
 }
 

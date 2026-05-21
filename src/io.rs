@@ -696,6 +696,7 @@ impl<const N: usize> VoiceManager<N> {
             self.effects.build(&self.states[0]);
             self.current_patch_num = *program as usize;
             // Re-initialize knob values from the new program's initial_cc if desired.
+            // todo: initial cc for sounds
             for (i, &val) in self.effects.initial_cc.iter().enumerate() {
                 // only update effect knobs (the fx_cc_vals vector and state)
                 if i < self.fx_cc_vals.len() {
