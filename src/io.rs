@@ -300,7 +300,6 @@ trait DubleSpeaker<const N: usize> {
             sample_rate: default_config.sample_rate(),
             buffer_size: buffer_size,
         };
-        println!("Config: {:?}", config);
         match default_config.sample_format() {
             SampleFormat::F32 => self.run_synth::<f32>(midi_msgs, device, config.into()),
             SampleFormat::I16 => self.run_synth::<i16>(midi_msgs, device, config.into()),
