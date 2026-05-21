@@ -1,7 +1,7 @@
-use crate::effects_builders::{EffectDef, FxChainFactory};
-use crate::patch_builder::{KnobLabel, PatchDef, PatchTable, SoundBuilder, SoundEntry};
-use crate::tunings::{TunerBuilder, TunerEntry};
 use crate::SynthFactory;
+use crate::effects_builders::FxChainFactory;
+use crate::patch_builder::{PatchDef, PatchTable};
+use crate::tunings::{TunerBuilder, TunerEntry};
 use fundsp::math::midi_hz;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -81,13 +81,10 @@ pub fn load_global_config(path: &str) -> GlobalConfig {
         Ok(text) => match toml::from_str::<GlobalConfigToml>(&text) {
             Ok(cfg) => GlobalConfig {
                 sound_cc_mapping: cfg
-                    .global.
-                    sound_cc_mapping
-                    .unwrap_or(defaults.sound_cc_mapping),
-                fx_cc_mapping: cfg
                     .global
-                    .fx_cc_mapping
-                    .unwrap_or(defaults.fx_cc_mapping),
+                    .sound_cc_mapping
+                    .unwrap_or(defaults.sound_cc_mapping),
+                fx_cc_mapping: cfg.global.fx_cc_mapping.unwrap_or(defaults.fx_cc_mapping),
                 voice_stealing: cfg.global.synth_stealing.unwrap_or(defaults.voice_stealing),
                 voice_release: cfg.global.synth_release.unwrap_or(defaults.voice_release),
             },
@@ -104,7 +101,7 @@ pub fn load_global_config(path: &str) -> GlobalConfig {
 }
 
 // ---------- program TOML structures ----------
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct TomlPatchDef {
     pub function: String,
     pub name: String,
@@ -173,39 +170,17 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatchDef> {
 }
 
 // ---------- build the PatchTable ----------
-pub fn build_patch_table(
-    programs: &[TomlPatchDef],
-    global_config: &GlobalConfig,
-) -> PatchTable {
-    // ---- build lookup maps ----
-    let sound_map: HashMap<&str, SoundBuilder> = inventory::iter::<SoundEntry>()
-        .map(|e| (e.name, e.builder))
-        .collect();
-
+pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig) -> PatchTable {
     let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
         .map(|e| (e.name, e.tuner))
         .collect();
 
     let default_tuner = midi_hz;
-    let effect_knob_count = global_config.fx_cc_mapping.len().max(1);
-
+    let effect_cc_count = global_config.fx_cc_mapping.len().max(1);
+    let sound_cc_count = global_config.sound_cc_mapping.len().max(1);
     let mut patch_defs = Vec::new();
 
     for prog in programs {
-        // --- resolve voice builder ---
-        let synth_builder = match sound_map.get(prog.function.as_str()) {
-            Some(&b) => b,
-            None => {
-                eprintln!(
-                    "Unknown function '{}' for program '{}', skipping",
-                    prog.function, prog.name
-                );
-                continue;
-            }
-        };
-        // voice config (empty table if none)
-        let synth_config = prog.config.clone().unwrap_or_else(toml::Table::new);
-
         // --- resolve tuner ---
         let tuner = if let Some(ref tuning_name) = prog.tuning {
             tuner_map
@@ -220,25 +195,19 @@ pub fn build_patch_table(
         };
 
         // --- build effect chain ---
-        let fx_chain = FxChainFactory::new(
-            prog.effects.as_ref(),
-            effect_knob_count,
-        );
-
-        // --- knob labels from effects ---
-        let knob_labels: Vec<KnobLabel> = fx_chain.knob_labels.clone();
+        let fx_chain = FxChainFactory::new(prog.effects.as_ref(), effect_cc_count);
 
         // --- assemble PatchDef ---
         let patch_def = PatchDef {
-            sound_factory: SynthFactory {
-                builder: synth_builder,
-                config: synth_config,
-            },
+            sound_factory: SynthFactory::new(
+                prog.name.as_str(),
+                prog.config.clone().unwrap(),
+                sound_cc_count,
+            ),
             name: prog.name.clone(),
             tuning: tuner,
             effects: fx_chain,
             initial_cc: vec![],
-            knob_labels,
         };
 
         patch_defs.push(patch_def);

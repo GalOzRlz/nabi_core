@@ -48,10 +48,7 @@ pub struct KnobLabel {
 }
 
 // ---- Sound builder signature ----
-pub type SoundBuilder = fn(
-    state: &SharedMidiState,
-    config: &Table,
-) -> Box<dyn AudioUnit>;
+pub type SoundBuilder = fn(state: &SharedMidiState, config: &Table) -> Box<dyn AudioUnit>;
 
 // ---- Sound registry ----
 pub struct SoundEntry {
@@ -95,7 +92,6 @@ pub struct PatchDef {
     pub tuning: TunerBuilder,
     pub effects: FxChainFactory,
     pub initial_cc: Vec<f32>,
-    pub knob_labels: Vec<KnobLabel>,       // includes both effect and sound labels
 }
 
 // ---- PatchTable ----

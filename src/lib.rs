@@ -28,6 +28,7 @@
 //! use an alternative function for converting MIDI notes to frequencies. This specific alternative function
 //! uses [Just Intonation](https://ancientlyre.com/blog/blog/ancient-tuning-methods) instead of equal temperament.
 
+mod backend;
 pub mod community_patches;
 pub mod config_builder;
 mod effects;
@@ -42,22 +43,23 @@ pub mod patch_builder;
 mod patch_helpers;
 pub mod sounds;
 pub mod tunings;
-mod backend;
 
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::patch_builder::SoundBuilder;
+use crate::patch_builder::{KnobGroup, KnobLabel, SoundBuilder, SoundEntry};
 use crate::patch_helpers::Adsr;
+use crate::tunings::TunerBuilder;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
 use fundsp::prelude64::{adsr_live, shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::MidiMsg;
-use crate::tunings::TunerBuilder;
+use toml::Table;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -72,20 +74,53 @@ pub const CONTROL_ON: f32 = 1.0;
 pub const CONTROL_OFF: f32 = -1.0;
 
 /// `SynthFunc` objects translate `SharedMidiState` values into [fundsp](https://crates.io/crates/fundsp) audio graphs.
-pub type SynthFunc = Arc<dyn Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync >;
+pub type SynthFunc = Arc<dyn Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync>;
 #[derive(Clone)]
 pub struct SynthFactory {
     pub builder: SoundBuilder,
-    pub config: toml::Table,
+    pub knob_labels: Vec<KnobLabel>,
+    pub config: Table,
 }
 
 impl SynthFactory {
+    pub fn new(builder_func_name: &str, config: Table, sound_cc_count: usize) -> Self {
+        let registry: HashMap<&str, &SoundEntry> = inventory::iter::<SoundEntry>()
+            .map(|e| (e.name, e))
+            .collect();
+        let entry = registry.get(builder_func_name).unwrap();
+        let builder = entry.builder.to_owned();
+        let mut knob_labels = Vec::new();
+        let mut knob_map = HashMap::new();
+        for (param_name, default_knob) in entry.cc_params.iter() {
+            let mut knob = *default_knob;
+
+            // Clamp or should we ignore?
+            if knob < 1 {
+                knob = 1;
+            }
+            if knob > sound_cc_count {
+                knob = sound_cc_count;
+            }
+
+            knob_map.insert(param_name.to_string(), knob);
+
+            knob_labels.push(KnobLabel {
+                group: KnobGroup::Sound,
+                index: knob,
+                label: format!("{}: {}", param_name, param_name),
+            })
+        }
+        Self {
+            builder,
+            knob_labels,
+            config: config.clone(),
+        }
+    }
+
     pub fn build(&self) -> SynthFunc {
         let function = self.builder.clone();
         let config = self.config.clone();
-        Arc::new(move |state: &SharedMidiState| -> Box<dyn AudioUnit> {
-            function(state, &config)
-        })
+        Arc::new(move |state: &SharedMidiState| -> Box<dyn AudioUnit> { function(state, &config) })
     }
 }
 
@@ -106,7 +141,7 @@ pub struct SharedMidiState {
     sound_knobs: [Shared; MAX_KNOBS_PER_GROUP],
     effect_knobs: [Shared; MAX_KNOBS_PER_GROUP],
     sound_knob_count: usize, // actual length from config
-    effect_knob_count: usize,
+    effect_cc_count: usize,
 
     adsr: Adsr,
 }
@@ -122,7 +157,7 @@ impl Default for SharedMidiState {
             sound_knobs: core::array::from_fn(|_| Shared::new(0.0)),
             effect_knobs: core::array::from_fn(|_| Shared::new(0.0)),
             sound_knob_count: 0,
-            effect_knob_count: 0,
+            effect_cc_count: 0,
             adsr: Default::default(),
         }
     }
@@ -145,16 +180,16 @@ impl SharedMidiState {
         fx_cc_mapping: &[u8],
         sound_init: &[f32],
         effect_init: &[f32],
-        tuner:  TunerBuilder,
+        tuner: TunerBuilder,
     ) -> Self {
         let mut s = Self::default();
         s.sound_knob_count = sound_cc_mapping.len().min(MAX_KNOBS_PER_GROUP);
-        s.effect_knob_count = fx_cc_mapping.len().min(MAX_KNOBS_PER_GROUP);
+        s.effect_cc_count = fx_cc_mapping.len().min(MAX_KNOBS_PER_GROUP);
         for i in 0..s.sound_knob_count {
             let val = sound_init.get(i).copied().unwrap_or(0.0);
             s.sound_knobs[i].set_value(val);
         }
-        for i in 0..s.effect_knob_count {
+        for i in 0..s.effect_cc_count {
             let val = effect_init.get(i).copied().unwrap_or(0.0);
             s.effect_knobs[i].set_value(val);
         }
@@ -182,7 +217,7 @@ impl SharedMidiState {
         var(&self.sound_knobs[idx - 1])
     }
     pub fn effect_knob(&self, idx: usize) -> An<Var> {
-        if idx < 1 || idx > self.effect_knob_count {
+        if idx < 1 || idx > self.effect_cc_count {
             return var(&self.control);
         }
         var(&self.effect_knobs[idx - 1])

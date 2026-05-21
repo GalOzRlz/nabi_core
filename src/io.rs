@@ -3,16 +3,17 @@ use crate::effects::master_limiter;
 use crate::effects_builders::FxChainFactory;
 use crate::patch_builder::KnobGroup;
 use crate::{
-    note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc, NUM_MIDI_VALUES,
+    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, patch_builder::PatchTable,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
-    StreamConfig,
+    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use fastrand::u8;
 use fundsp::prelude::U2;
 use fundsp::prelude64::split;
 use fundsp::{
@@ -24,14 +25,13 @@ use fundsp::{
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use read_input::{shortcut::input, InputBuild};
+use read_input::{InputBuild, shortcut::input};
 use std::collections::HashMap;
 use std::sync::Arc;
-use fastrand::u8;
 
 enum PatchButton {
     Right,
-    Left
+    Left,
 }
 
 #[derive(Clone, Debug)]
@@ -492,7 +492,7 @@ impl<const N: usize> VoiceManager<N> {
                 &config.fx_cc_mapping,
                 &sound_acc_array,
                 &fx_cc_array,
-                tuner
+                tuner,
             )
         });
         let master_fx_net = first_table.effects.clone().build(&states[0].clone());
@@ -510,7 +510,7 @@ impl<const N: usize> VoiceManager<N> {
             effect_knobs: vec![0.0; effect_len],
             cc_to_knob,
             current_patch_num: 0,
-            master_fx_net
+            master_fx_net,
         }
     }
 
@@ -597,8 +597,12 @@ impl<const N: usize> VoiceManager<N> {
                         if let Some(prog) =
                             self.patch_table.clone().entries.get(self.current_patch_num)
                         {
-                            println!("patch table: {:?}", prog.knob_labels);
-                            for lbl in &prog.knob_labels {
+                            for lbl in prog
+                                .effects
+                                .knob_labels
+                                .iter()
+                                .chain(prog.sound_factory.knob_labels.iter())
+                            {
                                 if lbl.group == group && lbl.index == idx + 1 {
                                     eprintln!("Knob {} {}: {}", idx + 1, lbl.label, value);
                                 }
@@ -673,14 +677,14 @@ impl<const N: usize> VoiceManager<N> {
         self.change_patch_with_offset(offset)
     }
     fn change_patch_with_offset(&mut self, offset: i32) {
-            let len = self.patch_table.entries.len();
-            if len == 0 {
-                return; // No patches, nothing to do
-            }
-            // Use modulo arithmetic for wrap-around
-            let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
-            self.current_patch_num = new_num as usize;
+        let len = self.patch_table.entries.len();
+        if len == 0 {
+            return; // No patches, nothing to do
         }
+        // Use modulo arithmetic for wrap-around
+        let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
+        self.current_patch_num = new_num as usize;
+    }
 
     fn change_patch(&mut self, program: &u8) {
         let table = self.patch_table.clone();
@@ -697,7 +701,7 @@ impl<const N: usize> VoiceManager<N> {
                 if i < self.effect_knobs.len() {
                     self.effect_knobs[i] = val;
                     for state in self.states.iter_mut() {
-                        if i < state.effect_knob_count {
+                        if i < state.effect_cc_count {
                             state.effect_knobs[i].set_value(val);
                         }
                     }
