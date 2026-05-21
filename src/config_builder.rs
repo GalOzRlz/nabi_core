@@ -207,7 +207,6 @@ pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig
             name: prog.name.clone(),
             tuning: tuner,
             effects: fx_chain,
-            initial_cc: vec![],
         };
 
         patch_defs.push(patch_def);

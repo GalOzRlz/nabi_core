@@ -17,5 +17,5 @@ room_size = 8.8
 damping   = 0.5
 length    = 4.2
 # CC‑mappable parameter: mix
-wet_amount = 0.9 
+wet_amount = 0.9
 #

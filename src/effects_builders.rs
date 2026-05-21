@@ -70,7 +70,7 @@ impl FxChainFactory {
         let registry: HashMap<&str, &EffectDef> = inventory::iter::<EffectDef>()
             .map(|e| (e.name, e))
             .collect();
-
+        let mut knob_labels = Vec::with_capacity(effect_cc_count);
         // If there are no effects, return an empty chain
         let Some(effects) = effects_config else {
             return FxChainFactory {
@@ -79,21 +79,19 @@ impl FxChainFactory {
                 knob_labels: Vec::new(),
             };
         };
-
+        let mut initial_knobs = vec![0.0_f32; effect_cc_count.max(1)];
         let mut chain = Vec::new();
-        let initial_knobs = vec![0.0_f32; effect_cc_count.max(1)];
-        let mut knob_labels = Vec::new();
 
-        for param_name in &effects.chain {
+        for fx_name in &effects.chain {
             let def = registry
-                .get(param_name.as_str())
-                .unwrap_or_else(|| panic!("Unknown effect: {}", param_name));
+                .get(fx_name.as_str())
+                .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name));
 
             // ---- Construction values (raw TOML table, exactly what the factory expects) ----
             let mut construction = toml::Table::new();
             if let Some(eff_cfg) = effects
                 .extras
-                .get(param_name.as_str())
+                .get(fx_name.as_str())
                 .and_then(|v| v.as_table())
             {
                 for (k, v) in eff_cfg {
@@ -107,17 +105,17 @@ impl FxChainFactory {
             let mut knob_map = HashMap::new();
             let user_mappings: Option<&Table> = effects
                 .extras
-                .get(param_name.as_str())
+                .get(fx_name.as_str())
                 .and_then(|v| v.get("mapping"))
                 .and_then(|v| v.as_table());
 
             // def.cc_params is now &[(name, default_knob)] – no default value
-            for (param_name, default_knob) in def.cc_params.iter() {
+            for (fx_name, default_knob) in def.cc_params.iter() {
                 let mut knob = *default_knob;
 
                 // User override?
                 if let Some(m) = user_mappings {
-                    if let Some(val) = m.get(*param_name).and_then(|v| v.as_integer()) {
+                    if let Some(val) = m.get(*fx_name).and_then(|v| v.as_integer()) {
                         knob = val as usize;
                     }
                 }
@@ -129,15 +127,27 @@ impl FxChainFactory {
                     knob = effect_cc_count;
                 }
 
-                knob_map.insert(param_name.to_string(), knob);
+                knob_map.insert(fx_name.to_string(), knob);
 
                 knob_labels.push(KnobLabel {
                     group: KnobGroup::Effect,
                     index: knob,
-                    label: format!("{}: {}", param_name, param_name),
+                    label: format!("{}: {}", fx_name, fx_name),
                 });
             }
-
+            for (param_name, value) in construction.iter() {
+                for (name, index) in knob_map.iter() {
+                    if name == param_name {
+                        initial_knobs.insert(
+                            *index,
+                            value
+                                .as_float()
+                                .expect("illegal value for initialization param!")
+                                as f32,
+                        )
+                    }
+                }
+            }
             // The factory converts `construction` into the proper struct internally
             let closure = (def.factory)(&construction, &knob_map);
             chain.push(closure);

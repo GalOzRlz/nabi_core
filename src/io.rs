@@ -9,6 +9,7 @@ use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
     Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
+    SupportedBufferSize,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use crossbeam_queue::SegQueue;
@@ -268,8 +269,38 @@ trait DubleSpeaker<const N: usize> {
         let device = host
             .default_output_device()
             .ok_or(anyhow!("failed to find a default output device"))?;
-        let config = device.default_output_config()?;
-        match config.sample_format() {
+        let default_config = device.default_output_config().expect("No default config");
+
+        // 2. Query the device's supported buffer size range
+        let buffer_size_range = default_config.buffer_size();
+
+        // 3. Choose a valid buffer size based on the hardware's report
+        let buffer_size = match buffer_size_range {
+            // If the device reports a min/max range, pick a value in between
+            SupportedBufferSize::Range { min, max } => {
+                let target = 1024; // Your desired size
+                // Clamp the target to the valid range [min, max]
+                let chosen = target.clamp(*min, *max);
+                println!(
+                    "Device supports buffer sizes {}-{}. Using {}.",
+                    min, max, chosen
+                );
+                cpal::BufferSize::Fixed(chosen)
+            }
+            // If the device doesn't report a range, fall back to the default
+            SupportedBufferSize::Unknown => {
+                println!("Device buffer size range unknown, using default.");
+                cpal::BufferSize::Default
+            }
+        };
+
+        // 4. Build your final stream configuration
+        let config = cpal::StreamConfig {
+            channels: default_config.channels(),
+            sample_rate: default_config.sample_rate(),
+            buffer_size: buffer_size,
+        };
+        match default_config.sample_format() {
             SampleFormat::F32 => self.run_synth::<f32>(midi_msgs, device, config.into()),
             SampleFormat::I16 => self.run_synth::<i16>(midi_msgs, device, config.into()),
             SampleFormat::U16 => self.run_synth::<u16>(midi_msgs, device, config.into()),
@@ -483,14 +514,14 @@ impl<const N: usize> VoiceManager<N> {
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build();
         let fx_cc_array = first_table.effects.initial_cc.clone();
-        let sound_acc_array = first_table.initial_cc.clone();
+        let sound_cc_array = first_table.sound_factory.initial_cc.clone();
         let tuner = first_table.tuning;
 
         let states = [(); N].map(|_| {
             SharedMidiState::new(
                 &config.sound_cc_mapping,
                 &config.fx_cc_mapping,
-                &sound_acc_array,
+                &sound_cc_array,
                 &fx_cc_array,
                 tuner,
             )
@@ -703,6 +734,7 @@ impl<const N: usize> VoiceManager<N> {
 
         // 2. Apply sound initial CCs to sound parameters
         for (i, &val) in self.patch_table.entries[self.current_patch_num]
+            .sound_factory
             .initial_cc
             .iter()
             .enumerate()

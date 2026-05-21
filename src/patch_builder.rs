@@ -100,7 +100,6 @@ pub struct PatchDef {
     pub name: String,
     pub tuning: TunerBuilder,
     pub effects: FxChainFactory,
-    pub initial_cc: Vec<f32>,
 }
 
 // ---- PatchTable ----

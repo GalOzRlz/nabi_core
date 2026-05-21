@@ -33,6 +33,7 @@ pub mod tunings;
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Index;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -82,6 +83,7 @@ pub struct SynthFactory {
     pub builder: SoundBuilder,
     pub knob_labels: Vec<KnobLabel>,
     pub config: Table,
+    pub initial_cc: Vec<f32>,
 }
 
 impl SynthFactory {
@@ -114,10 +116,21 @@ impl SynthFactory {
                 label: format!("{}: {}", param_name, param_name),
             })
         }
+        let mut lables = knob_labels.clone();
+        let mut initial_knobs = vec![0.0_f32; sound_cc_count.max(1)];
+        for v in config.iter() {
+            let c_label = v.0;
+            for l in lables.iter_mut() {
+                if l.label == *c_label {
+                    initial_knobs.insert(l.index, v.1.as_float().expect("illegal value!") as f32)
+                }
+            }
+        }
         Self {
             builder,
             knob_labels,
             config: config.clone(),
+            initial_cc: initial_knobs,
         }
     }
 
