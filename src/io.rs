@@ -1,4 +1,5 @@
 use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
+use crate::effects::master_limiter;
 use crate::effects_builders::FxChainFactory;
 use crate::patch_builder::KnobGroup;
 use crate::{
@@ -392,10 +393,7 @@ trait DubleSpeaker<const N: usize> {
         let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
             let mut input_buffer = BufferVec::new(2);
             let mut output_buffer = BufferVec::new(2);
-            input_buffer.resize(n_frames);
-            output_buffer.resize(n_frames);
-            eprintln!("Inputs: {}, Outputs: {}", sound.inputs(), sound.outputs());
-            // Process the block – input_buffer is silent (all zeros)
+
             sound.process(
                 n_frames,
                 &input_buffer.buffer_ref(),
@@ -409,7 +407,7 @@ trait DubleSpeaker<const N: usize> {
         };
 
         let channels = config.channels as usize;
-        let block_size = 64; // FunDSP’s optimal block size
+        let block_size = 64; // FunDSP’s max block size
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
@@ -522,7 +520,6 @@ fn write_data_block<T: Sample + FromSample<f32>>(
         let remaining = frame_count - frames_written;
         let frames_to_gen = remaining.min(block_size);
 
-        // Generate a whole block at once
         next_block(&mut block_buffer[..frames_to_gen], frames_to_gen);
 
         // Copy the block into the output buffer
@@ -533,7 +530,6 @@ fn write_data_block<T: Sample + FromSample<f32>>(
                 output[index + 1] = T::from_sample(*r);
             }
         }
-
         frames_written += frames_to_gen;
     }
 }
@@ -649,7 +645,7 @@ impl<const N: usize> VoiceManager<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 (mono) or U2 (stereo)"),
         };
-        mix //>> master_limiter() >> self.master_fx_net.clone()
+        mix >> master_limiter() >> self.master_fx_net.clone()
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
