@@ -123,8 +123,7 @@ impl SynthFactory {
             for l in lables.iter_mut() {
                 if l.label == *c_label {
                     // cc is 1-...
-                    initial_knobs
-                        .insert(l.index - 1, v.1.as_float().expect("illegal value!") as f32)
+                    initial_knobs[l.index - 1] = v.1.as_float().expect("illegal value!") as f32
                 }
             }
         }
@@ -198,7 +197,7 @@ impl SharedMidiState {
         effect_init: &[f32],
         tuner: TunerBuilder,
     ) -> Self {
-        println!("sound init: {:?}", sound_init);
+        //println!("sound init: {:?}", sound_init);
         let mut s = Self::default();
         s.sound_cc_count = sound_cc_mapping.len().min(MAX_KNOBS_PER_GROUP);
         s.effect_cc_count = fx_cc_mapping.len().min(MAX_KNOBS_PER_GROUP);

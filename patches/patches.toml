@@ -10,7 +10,7 @@ function = "Square_saw_soft"
 name = "soft square+saw"
 tuning = "just intonation"
 [program.effects]
-chain = ["reverb"]
+chain = ["eq2", "reverb"]
 [program.effects.reverb]
 # Construction parameters (never modulated)
 room_size = 8.8
@@ -18,4 +18,6 @@ damping   = 0.5
 length    = 4.2
 # CC‑mappable parameter: mix
 wet_amount = 0.9
-#
+[program.effects.eq2]
+lowcut = 0.0
+highcut = 1.0

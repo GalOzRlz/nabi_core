@@ -58,6 +58,8 @@ pub struct FxChainFactory {
 
 impl FxChainFactory {
     pub fn build(&mut self, shared_midi_state: &SharedMidiState) -> Net {
+        println!("knob lables: {:?}", self.knob_labels);
+        println!("initial cc: {:?}", self.initial_cc);
         let arc_vec: Arc<Vec<Net>> =
             Arc::new(self.chain.iter().map(|fx| fx(shared_midi_state)).collect());
         connect_node_vec(arc_vec, None)
@@ -88,7 +90,7 @@ impl FxChainFactory {
                 .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name));
 
             // ---- Construction values (raw TOML table, exactly what the factory expects) ----
-            let mut construction = toml::Table::new();
+            let mut construction = Table::new();
             if let Some(eff_cfg) = effects
                 .extras
                 .get(fx_name.as_str())
@@ -135,16 +137,15 @@ impl FxChainFactory {
                     label: format!("{}: {}", fx_name, fx_name),
                 });
             }
+            println!("knob map: {:?}", knob_map);
             for (param_name, value) in construction.iter() {
                 for (name, index) in knob_map.iter() {
                     if name == param_name {
-                        initial_knobs.insert(
-                            *index - 1, // cc is 1-..
-                            value
-                                .as_float()
-                                .expect("illegal value for initialization param!")
-                                as f32,
-                        )
+                        println!("cc knob {:?} - will get value {:?}", index, *value);
+                        initial_knobs[index - 1] = value
+                            .as_float()
+                            .expect("illegal value for initialization param!")
+                            as f32;
                     }
                 }
             }
@@ -152,8 +153,6 @@ impl FxChainFactory {
             let closure = (def.factory)(&construction, &knob_map);
             chain.push(closure);
         }
-        println!("effects factory: {:?}", effects.chain);
-        println!("lables: {:?}", knob_labels);
         FxChainFactory {
             chain: Arc::new(chain),
             initial_cc: initial_knobs,
