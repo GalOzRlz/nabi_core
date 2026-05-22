@@ -8,7 +8,7 @@ const WELL_C_MINUS_1: f32 = 8.203_544;
 const STANDARD_C: f32 = 8.18;
 
 /// A tuner converts a MIDI note (0–127) to a frequency (Hz).
-pub type TunerBuilder =  fn(f32) -> f32;
+pub type TunerBuilder = fn(f32) -> f32;
 
 #[macro_export]
 macro_rules! register_tuner {

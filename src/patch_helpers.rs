@@ -1,8 +1,9 @@
+use crate::SharedMidiState;
 use fundsp::audiounit::AudioUnit;
 use fundsp::math::{clamp01, xerp};
 use fundsp::net::Net;
 use fundsp::prelude64::{adsr_live, envelope2, moog_q};
-use crate::SharedMidiState;
+use fundsp::shared::Shared;
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.
 pub fn simple_sound(state: &SharedMidiState, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {
@@ -13,60 +14,30 @@ pub fn simple_sound(state: &SharedMidiState, synth: Box<dyn AudioUnit>) -> Box<d
     )
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone)]
 /// Represents ADSR (Attack/Decay/Sustain/Release) settings for the purpose of generating MIDI-ready sounds.
 pub struct Adsr {
-    pub attack: f32,
-    pub decay: f32,
-    pub sustain: f32,
-    pub release: f32,
+    pub attack: Shared,
+    pub decay: Shared,
+    pub sustain: Shared,
+    pub release: Shared,
+}
+impl Default for Adsr {
+    fn default() -> Self {
+        Self {
+            attack: Shared::new(0.01),
+            decay: Shared::new(0.3),
+            sustain: Shared::new(0.6),
+            release: Shared::new(0.5),
+        }
+    }
 }
 
 impl Adsr {
-    /// Returns an ADSR filter in a `Box`.
-    pub fn boxed(&self, state: &SharedMidiState) -> Box<dyn AudioUnit> {
-        let control = state.control_var();
-        Box::new(control >> adsr_live(self.attack, self.decay, self.sustain, self.release))
-    }
-
-    /// Returns an ADSR filter in a `Net64`.
-    pub fn net64ed(&self, state: &SharedMidiState) -> Net {
-        Net::wrap(self.boxed(state))
-    }
-
-    /// Stacks pitch with an ADSR and pipes them into `timed_sound`. Useful for any sound needing two
-    /// inputs, where the first is a pitch and the second is time-varying information.
-    pub fn timed_sound(&self, timed_sound: Box<dyn AudioUnit>, state: &SharedMidiState) -> Net {
-        Net::pipe(
-            Net::stack(state.bent_pitch(), self.net64ed(state)),
-            Net::wrap(timed_sound),
-        )
-    }
-
-    /// Stacks `source` with an ADSR that is piped into an exponential interpolator.
-    /// Thes two stacked inputs are then piped into a Moog filter.
-    pub fn timed_moog(&self, source: Box<dyn AudioUnit>, state: &SharedMidiState) -> Net {
-        Net::pipe(
-            Net::stack(
-                Net::wrap(source),
-                Net::pipe(
-                    self.net64ed(state),
-                    Net::wrap(Box::new(envelope2(move |_, n| xerp(1100.0, 11000.0, n)))),
-                ),
-            ),
-            Net::wrap(Box::new(moog_q(0.6))),
-        )
-    }
-
-    /// Convenience method to create a ready-to-go sound using `timed_sound()` above.
-    pub fn assemble_timed(
-        &self,
-        timed_sound: Box<dyn AudioUnit>,
-        state: &SharedMidiState,
-    ) -> Box<dyn AudioUnit> {
-        state.assemble_pitched_sound(
-            Box::new(self.timed_sound(timed_sound, state)),
-            self.boxed(state),
-        )
+    pub fn configure(&self, attack: f32, decay: f32, sustain: f32, release: f32) {
+        self.attack.set_value(attack);
+        self.decay.set_value(decay);
+        self.sustain.set_value(sustain);
+        self.release.set_value(release);
     }
 }

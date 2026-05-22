@@ -50,7 +50,7 @@ pub struct CombPluck {
 
 impl CombPluck {
     /// Create a new plucked string synthesizer based on damping low pass filter and resonant comb filter.
-    ///Inputs 
+    ///Inputs
     /// # Parameters
     /// - `feedback`: Decay per sample (0.0 to 1.0). Higher = longer sustain.
     /// - `max_delay_seconds`: Maximum delay time for lowest frequency (defines lowest note).
@@ -262,8 +262,8 @@ pub fn hit_comb_pipe() -> An<CombPluck> {
 }
 
 pub fn dirty_guitar() -> fn(Net, An<Var>) -> Net {
-    let mix = move |pitch: Net, gate: An<Var>|
-        (pitch | gate.clone() | constant(0.0)) >> pluck_comb_string() >> lowpass_hz(9000.0, 0.5);
+    let mix = move |pitch: Net, gate: An<Var>| {
+        (pitch | gate.clone() | constant(0.0)) >> pluck_comb_string() >> lowpass_hz(9000.0, 0.5)
+    };
     mix
 }
-

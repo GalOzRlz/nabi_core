@@ -1,21 +1,22 @@
-use crate::patch_builder::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
-use serde::{de::{self, Visitor}, Deserialize, Deserializer};
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::fmt;
-use fastrand::usize;
-use fundsp::math::midi_hz;
+use crate::SynthFactory;
+use crate::effects_builders::FxChainFactory;
+use crate::patch_builder::{PatchDef, PatchTable};
 use crate::tunings::{TunerBuilder, TunerEntry};
+use fundsp::math::midi_hz;
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 
-pub const ENCODER_COUNT: usize = 4;
-pub const DEFAULT_CC_ARRAY: CcValuesArray = [0.0, 0.0, 0.0, 1.0];
-pub const DEFAULT_CC_MAPPING: CcMapping = [74, 71, 76, 77];
-pub type CcValuesArray = [f32; ENCODER_COUNT];
-pub type CcMapping = [usize; ENCODER_COUNT];
+// ---------- dynamic knob sizing ----------
+pub const MAX_KNOBS_PER_GROUP: usize = 16;
 
-/// Determines the voice stealing strategy:
-/// LegatoOldest: Keep envelope and steal the oldest voice
-/// LegatoLast: either oldest or latest voice
+fn default_fx_cc_vals() -> Vec<u8> {
+    vec![74, 71, 76, 77]
+}
+fn default_sound_cc_vals() -> Vec<u8> {
+    vec![80, 81, 82, 83]
+}
+
+// ---------- voice management enums ----------
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum VoiceStealingConfig {
@@ -23,8 +24,6 @@ pub enum VoiceStealingConfig {
     LegatoLast,
 }
 
-/// Determine if voices are freed from current voices queue by instrument ADSR or by being at zero volume.
-/// Release on zero is a bit costlier but allows for 0.0 release sounds to play better.
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum FreeVoiceStrategy {
@@ -32,144 +31,109 @@ pub enum FreeVoiceStrategy {
     ReleaseOnZero,
 }
 
-#[derive(Deserialize)]
-struct GlobalConfigToml {
-    #[serde(default)]
-    global: GlobalSection,
-}
-
-impl Default for GlobalSection {
-    fn default() -> Self {
-        Self {
-            cc_mappings: None,
-            voice_stealing: None,
-            voice_release: None,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct GlobalSection {
-    #[serde(default)]                             // None if missing
-    cc_mappings: Option<CcMapping>,
-
-    #[serde(default)]
-    voice_stealing: Option<VoiceStealingConfig>,
-
-    #[serde(default)]
-    voice_release: Option<FreeVoiceStrategy>,
-}
-
+// ---------- runtime global configuration ----------
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalConfig {
     pub voice_stealing: VoiceStealingConfig,
     pub voice_release: FreeVoiceStrategy,
-    pub cc_mappings: CcMapping,          // your type that wraps [u8; 4]
+
+    pub sound_cc_mapping: Vec<u8>,
+    pub fx_cc_mapping: Vec<u8>,
 }
 
 impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
             voice_stealing: VoiceStealingConfig::LegatoLast,
-            voice_release: FreeVoiceStrategy::ReleaseOnZero,
-            cc_mappings: DEFAULT_CC_MAPPING,
+            voice_release: FreeVoiceStrategy::FollowADSR,
+            sound_cc_mapping: default_sound_cc_vals(),
+            fx_cc_mapping: default_fx_cc_vals(),
         }
     }
 }
 
-
-/// Custom deserializer for [u8; 4] from a TOML array of integers.
-#[derive(Debug, Clone, Copy)]
-pub struct TomlCcArray(pub CcValuesArray);
-
-impl Default for TomlCcArray {
-    fn default() -> Self { TomlCcArray(DEFAULT_CC_ARRAY)}
+// ---------- TOML structures for midi.toml ----------
+#[derive(Deserialize)]
+struct GlobalConfigToml {
+    #[serde(default)]
+    global: GlobalSection,
 }
 
-impl<'de> Deserialize<'de> for TomlCcArray {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de>
-    {
-        struct CcVisitor;
-        impl<'de> Visitor<'de> for CcVisitor {
-            type Value = TomlCcArray;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let fmt = format!("an array of {} integers (0–255)", ENCODER_COUNT);
-                f.write_str(fmt.as_str())
+#[derive(Deserialize, Default)]
+struct GlobalSection {
+    #[serde(default)]
+    sound_cc_mapping: Option<Vec<u8>>,
+
+    #[serde(default)]
+    fx_cc_mapping: Option<Vec<u8>>,
+
+    #[serde(default)]
+    synth_stealing: Option<VoiceStealingConfig>,
+
+    #[serde(default)]
+    synth_release: Option<FreeVoiceStrategy>,
+}
+
+pub fn load_global_config(path: &str) -> GlobalConfig {
+    let defaults = GlobalConfig::default();
+
+    match std::fs::read_to_string(path) {
+        Ok(text) => match toml::from_str::<GlobalConfigToml>(&text) {
+            Ok(cfg) => GlobalConfig {
+                sound_cc_mapping: cfg
+                    .global
+                    .sound_cc_mapping
+                    .unwrap_or(defaults.sound_cc_mapping),
+                fx_cc_mapping: cfg.global.fx_cc_mapping.unwrap_or(defaults.fx_cc_mapping),
+                voice_stealing: cfg.global.synth_stealing.unwrap_or(defaults.voice_stealing),
+                voice_release: cfg.global.synth_release.unwrap_or(defaults.voice_release),
+            },
+            Err(e) => {
+                eprintln!("Warning: failed to parse midi.toml: {e}. Using defaults.");
+                defaults
             }
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where A: de::SeqAccess<'de>
-            {
-                let mut arr = [0.0; ENCODER_COUNT];
-                for (i, slot) in arr.iter_mut().enumerate() {
-                    *slot = seq.next_element()?.ok_or_else(|| {
-                        de::Error::invalid_length(i, &self)
-                    })?;
-                }
-                Ok(TomlCcArray(arr))
-            }
+        },
+        Err(_) => {
+            eprintln!("midi.toml not found, using default config.");
+            defaults
         }
-        deserializer.deserialize_seq(CcVisitor)
     }
 }
 
+// ---------- program TOML structures ----------
+#[derive(Deserialize, Clone)]
+pub struct TomlPatchDef {
+    pub function: String,
+    pub name: String,
+    pub tuning: Option<String>,
+    pub config: Option<toml::Table>,
+    pub effects: Option<TomlEffectSection>,
+}
 
-#[derive(Deserialize)]
-pub struct TomlPatch {
-    function: String,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    cc: TomlCcArray,
-    #[serde(default)]
-    tuning: Option<String>,
+#[derive(Deserialize, Clone)]
+pub struct TomlEffectSection {
+    pub chain: Vec<String>,
+    #[serde(flatten)]
+    pub extras: HashMap<String, toml::Value>,
 }
 
 #[derive(Deserialize)]
-pub struct PatchFile {
-    program: Vec<TomlPatch>,
+struct ProgramsFile {
+    program: Vec<TomlPatchDef>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Deserialize)]
 struct TomlOrderConfig {
     patch_order: Vec<String>,
 }
 
-// loading and building functions:
-pub fn load_global_config() -> Option<GlobalConfig> {
-    let path = "midi_config/midi.toml";
-    let default_config = GlobalConfig::default();
-
-    match std::fs::read_to_string(path) {
-        Ok(text) => {
-            match toml::from_str::<GlobalConfigToml>(&text) {
-                Ok(cfg) => Some(GlobalConfig {
-                    cc_mappings: cfg.global.cc_mappings
-                        .unwrap_or(default_config.cc_mappings),
-                    voice_stealing: cfg.global.voice_stealing.unwrap_or(default_config.voice_stealing),
-                    voice_release: cfg.global.voice_release.unwrap_or(default_config.voice_release),
-                }),
-                Err(e) => {
-                    eprintln!("Warning: failed to parse midi.toml: {}. Using defaults.", e);
-                    Some(default_config)
-                }
-            }
-        }
-        Err(_) => {
-            eprintln!("midi.toml not found, using default config.");
-            Some(default_config)
-        }
-    }
-}
-
-fn load_patch_file(path: &str) -> Result<Vec<TomlPatch>, Box<dyn std::error::Error>> {
+fn load_patch_file(path: &str) -> Result<Vec<TomlPatchDef>, Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path)?;
-    let file: PatchFile = toml::from_str(&text)?;
+    let file: ProgramsFile = toml::from_str(&text)?;
     Ok(file.program)
 }
 
-/// Load multiple TOML files, merge duplicates (last definition wins for CC and name).
-pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatch> {
+pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatchDef> {
     let mut all_programs = Vec::new();
     let mut used_names: HashSet<String> = HashSet::new();
 
@@ -182,8 +146,7 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatch> {
             }
         };
         for prog in programs {
-            // The display name, defaulting to the function name if not given.
-            let display_name = prog.name.clone().unwrap_or_else(|| prog.function.clone());
+            let display_name = prog.name.clone();
 
             if used_names.contains(&display_name) {
                 panic!(
@@ -194,88 +157,75 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatch> {
             }
             used_names.insert(display_name.clone());
 
-            all_programs.push(TomlPatch {
+            all_programs.push(TomlPatchDef {
                 function: prog.function,
-                name: Some(display_name),
-                cc: prog.cc,
+                name: display_name,
                 tuning: prog.tuning,
+                config: prog.config,
+                effects: prog.effects,
             });
         }
     }
     all_programs
 }
 
-pub fn build_patch_table(programs: &[TomlPatch]) -> PatchTable {
-    // Lookup from name to raw builder pointer
-    let builder_map: HashMap<&str, SoundBuilder> = inventory::iter::<PatchEntry>()
-        .map(|e| (e.name, e.builder))
+// ---------- build the PatchTable ----------
+pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig) -> PatchTable {
+    let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
+        .map(|e| (e.name, e.tuner))
         .collect();
 
-    let mut entries = Vec::new();
+    let default_tuner = midi_hz;
+    let effect_cc_count = global_config.fx_cc_mapping.len().max(1);
+    let sound_cc_count = global_config.sound_cc_mapping.len().max(1);
+    let mut patch_defs = Vec::new();
+
     for prog in programs {
-        let builder = match builder_map.get(prog.function.as_str()) {
-            Some(&b) => b,
-            None => {
-                eprintln!(
-                    "Unknown function '{}' for program '{}', skipping {:?}",
-                    prog.function,
-                    prog.name.as_deref().unwrap_or(&prog.function),
-                    prog.tuning,
-                );
-                continue;
-            }
-        };
-
-        let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
-            .map(|e| (e.name, e.tuner))
-            .collect();
+        // --- resolve tuner ---
         let tuner = if let Some(ref tuning_name) = prog.tuning {
-            match tuner_map.get(tuning_name.as_str()) {
-                Some(&t) => t,
-                None => {
+            tuner_map
+                .get(tuning_name.as_str())
+                .copied()
+                .unwrap_or_else(|| {
                     eprintln!("Unknown tuning '{}', using default", tuning_name);
-                    midi_hz
-                }
-            }
+                    default_tuner
+                })
         } else {
-            midi_hz
+            default_tuner
         };
-        let cc = prog.cc.0; // [u8; 4]
-        let name = prog.name.clone().unwrap_or_else(|| prog.function.clone());
-        let def = (name, builder.into_speaker_def(), cc, tuner);
-        entries.push(def);
+
+        // --- build effect chain ---
+        let fx_chain = FxChainFactory::new(prog.effects.as_ref(), effect_cc_count);
+
+        // --- assemble PatchDef ---
+        let patch_def = PatchDef {
+            sound_factory: SynthFactory::new(
+                prog.function.as_str(),
+                prog.config.clone().unwrap_or_default(),
+                sound_cc_count,
+            ),
+            name: prog.name.clone(),
+            tuning: tuner,
+            effects: fx_chain,
+        };
+
+        patch_defs.push(patch_def);
     }
-    PatchTable::new(entries)
+
+    PatchTable::new(patch_defs)
 }
-
-fn get_patch_table_from_toml(paths: &[&str]) -> PatchTable {
-    let all_programs = load_all_programs(paths);
-
-    let table = build_patch_table(&all_programs);
-    println!("Loaded {} programs:", &table.entries.len());
-    for (i, (name, _, _, _)) in table.entries.iter().enumerate() {
-        println!("  {}: {name}", i + 1);
-    }
-    table
-}
-
-pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
-    // Attach original index to each entry, then drain.
-    let indexed: Vec<(usize, PatchTableItem)> = entries
-        .drain(..)
-        .enumerate()
-        .collect();
-
-    // Build lookup from name to the actual entry.
-    let mut name_to_entry: HashMap<String, (usize, PatchTableItem)> = HashMap::new();
-    for item in indexed {
-        name_to_entry.insert(item.1.0.clone(), item);
+// ---------- ordering ----------
+fn reorder_by_names(entries: &mut Vec<PatchDef>, order: &[String]) {
+    let old_entries = std::mem::take(entries);
+    let indexed: Vec<(usize, PatchDef)> = old_entries.into_iter().enumerate().collect();
+    let mut name_to_entry: HashMap<String, (usize, PatchDef)> = HashMap::new();
+    for (idx, entry) in indexed {
+        name_to_entry.insert(entry.name.clone(), (idx, entry));
     }
 
     let mut new_entries = Vec::with_capacity(name_to_entry.len());
     let mut used_indices = HashSet::new();
 
-    // Pick entries in the given order.
     for name in order {
         if let Some((idx, entry)) = name_to_entry.remove(name) {
             new_entries.push(entry);
@@ -283,10 +233,7 @@ pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
         }
     }
 
-    // Collect the remaining entries, sorted by original index.
-    let mut remaining: Vec<(usize, PatchTableItem)> = name_to_entry
-        .into_values()
-        .collect();
+    let mut remaining: Vec<(usize, PatchDef)> = name_to_entry.into_values().collect();
     remaining.sort_by_key(|(idx, _)| *idx);
     for (_, entry) in remaining {
         new_entries.push(entry);
@@ -295,8 +242,14 @@ pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
     *entries = new_entries;
 }
 
-pub fn create_ordered_patch_table(patch_paths: &[&str], order_path: &str) -> PatchTable {
-    let mut patch_table = get_patch_table_from_toml(patch_paths);
+pub fn create_ordered_patch_table(
+    patch_paths: &[&str],
+    order_path: &str,
+    global_config: &GlobalConfig,
+) -> PatchTable {
+    let all_programs = load_all_programs(patch_paths);
+    let mut patch_table = build_patch_table(&all_programs, global_config);
+
     if let Ok(text) = std::fs::read_to_string(order_path) {
         if let Ok(ord_config) = toml::from_str::<TomlOrderConfig>(&text) {
             eprintln!("Loaded ordered patch table:{:?}", ord_config.patch_order);
@@ -304,8 +257,7 @@ pub fn create_ordered_patch_table(patch_paths: &[&str], order_path: &str) -> Pat
         } else {
             eprintln!("Failed to parse order.toml inside toml, using default order");
         }
-    }
-    else {
+    } else {
         eprintln!("Failed to parse order.toml in read_to_string, using default order");
     }
     patch_table

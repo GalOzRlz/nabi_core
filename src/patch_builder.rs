@@ -1,82 +1,122 @@
-use crate::config_builder::CcValuesArray;
+use crate::effects_builders::FxChainFactory;
 use crate::tunings::TunerBuilder;
-use crate::{SharedMidiState, SynthFunc};
-use fundsp::prelude::AudioUnit;
+use crate::{SharedMidiState, SynthFactory};
+use fundsp::prelude64::AudioUnit;
 use inventory;
-use std::sync::Arc;
+use serde::de::DeserializeOwned;
+use std::collections::HashMap;
+use toml;
+use toml::Table;
 
-pub type SoundBuilder = fn(state: &SharedMidiState) -> Box<dyn AudioUnit>;
-
-/// Globally registered sound entries.
-pub struct PatchEntry {
-    /// Name used in TOML files (e.g. "fm_bell").
-    pub name: &'static str,
-    pub builder: SoundBuilder,
+#[derive(Debug, Clone)]
+pub enum ParamType {
+    Float,
+    Int,
+    String,
 }
 
-inventory::collect!(PatchEntry);
+#[derive(Debug, Clone)]
+pub enum ParamDefault {
+    Float(f64),
+    Int(i64),
+    String(&'static str),
+}
 
-/// Place this inside every sound file to register the builder.
+#[derive(Debug, Clone)]
+pub struct ParamInfo {
+    pub name: &'static str,
+    pub param_type: ParamType,
+    pub default: ParamDefault,
+    pub description: Option<&'static str>,
+}
+pub trait Parameterized: Sized {
+    fn param_info() -> &'static [ParamInfo];
+
+    fn from_table(table: &Table) -> Self
+    where
+        Self: DeserializeOwned + Default,
+    {
+        let value: toml::Value = table.clone().into();
+        Self::deserialize(value).unwrap_or_default()
+    }
+}
+
+pub type CcMap = HashMap<String, usize>;
+// ---- Knob labels (shared with effects_builders) ----
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnobGroup {
+    Sound,
+    Effect,
+}
+
+#[derive(Debug, Clone)]
+pub struct KnobLabel {
+    pub group: KnobGroup,
+    pub index: usize, // 1‑based logical knob
+    pub label: String,
+}
+
+// ---- Sound builder signature ----
+pub type SoundBuilder = fn(state: &SharedMidiState, config: &Table) -> Box<dyn AudioUnit>;
+
+// ---- Sound registry ----
+pub struct SoundEntry {
+    pub name: &'static str,
+    pub builder: SoundBuilder,
+    pub param_info: fn() -> &'static [ParamInfo],
+    pub cc_params: &'static [(&'static str, usize)],
+}
+
+inventory::collect!(SoundEntry);
+
+// ---- Registration macro (name: only) ----
 #[macro_export]
 macro_rules! register_sound {
-    ($name:expr, $builder:ident) => {
+    (
+        name: $name:expr,
+        params: $params_type:ty,
+        factory: $factory_fn:ident,
+        cc_params: [ $( ($cc_name:expr, $cc_default_knob:expr) ),* $(,)? ]
+    ) => {
         inventory::submit! {
-            PatchEntry {
+            SoundEntry {
                 name: $name,
-                builder: $builder as fn(&SharedMidiState) -> Box<dyn AudioUnit>,
+                builder: (|state: &$crate::SharedMidiState,
+                           config: &toml::Table|
+                 -> Box<dyn AudioUnit> {
+                    let params = <$params_type as Parameterized>::from_table(config);
+                    $factory_fn(&params, state)
+                }) as SoundBuilder,
+                param_info: <$params_type as Parameterized>::param_info as fn() -> &'static [ParamInfo],
+                cc_params: &[ $( ($cc_name, $cc_default_knob) ),* ],
             }
         }
     };
 }
 
-/// Maximum number of entries controllable via MIDI messages in a MIDI program table.
+#[derive(Clone)]
+pub struct PatchDef {
+    pub sound_factory: SynthFactory,
+    pub name: String,
+    pub tuning: TunerBuilder,
+    pub effects: FxChainFactory,
+}
+
+// ---- PatchTable ----
 pub const NUM_PATCH_SLOTS: usize = 2_usize.pow(7);
 
-/// A Speaker Definition enum to handle either separate L/R output or true stereo instruments (i.e., with U2 outputs).
 #[derive(Clone)]
-pub enum SpeakerDef {
-    Stereo(SynthFunc),
-    LR { left: SynthFunc, right: SynthFunc },
-}
-
-/// A Trait to turn an AudioUnit or a tuple of AudioUnit into a SpeakerDef containing SynthFunc(s).
-pub trait IntoSpeakerDef {
-    fn into_speaker_def(self) -> SpeakerDef;
-}
-
-/// Into a SpeakerDef::Stereo for a single AudioUnit
-impl<F> IntoSpeakerDef for F
-where
-    F: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
-{
-    fn into_speaker_def(self) -> SpeakerDef {
-        SpeakerDef::Stereo(Arc::new(self))
-    }
-}
-
-/// Return an owned SpeakerDef::LR and for a tuple of AudioUnits
-impl<L, R> IntoSpeakerDef for (L, R)
-where
-    L: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
-    R: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
-{
-    fn into_speaker_def(self) -> SpeakerDef {
-        SpeakerDef::LR {
-            left: Arc::new(self.0),
-            right: Arc::new(self.1),
-        }
-    }
-}
-
-/// convenience type for a Program Table item with name and SpeakerDef.
-pub type PatchTableItem = (String, SpeakerDef, CcValuesArray, TunerBuilder);
-
-/// Struct containing all the entries from which you can choose your synths.
 pub struct PatchTable {
-    pub entries: Vec<PatchTableItem>,
+    pub entries: Vec<PatchDef>,
 }
 
 impl PatchTable {
-    pub fn new(entries: Vec<PatchTableItem>) -> Self {
+    pub fn new(entries: Vec<PatchDef>) -> Self {
         Self { entries }
-    } }
+    }
+}
+
+// pub fn new_sound(sound: Box<dyn AudioUnit>, shared_midi_state: SharedMidiState) -> SynthFunc {
+//     Arc::new(Box::new((move |state: &SharedMidiState| { state.assemble_unpitched_sound(sound, state.boxed_adsr())
+//     })))
+// }
