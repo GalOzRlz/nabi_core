@@ -1,8 +1,7 @@
 use crate::SharedMidiState;
 use fundsp::audiounit::AudioUnit;
-use fundsp::math::{clamp01, xerp};
-use fundsp::net::Net;
-use fundsp::prelude64::{adsr_live, envelope2, moog_q};
+use fundsp::math::clamp01;
+use fundsp::prelude64::envelope2;
 use fundsp::shared::Shared;
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.

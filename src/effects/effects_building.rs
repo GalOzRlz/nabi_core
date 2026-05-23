@@ -1,8 +1,9 @@
 use crate::SharedMidiState;
+use crate::common_definitions::params::ParamInfo;
 use crate::config_builder::TomlEffectSection;
-use crate::patch_builder::{KnobGroup, KnobLabel, ParamInfo};
-use fundsp::prelude::{U2, multipass};
-use fundsp::prelude64::{AudioUnit, Net};
+use crate::effects::helpers::connect_node_vec;
+use crate::patch_builder::{KnobGroup, KnobLabel};
+use fundsp::prelude64::Net;
 use std::collections::HashMap;
 use std::sync::Arc;
 use toml::Table;
@@ -159,21 +160,4 @@ impl FxChainFactory {
             knob_labels,
         }
     }
-}
-
-pub fn to_stereo(net: Net) -> Net {
-    match net.inputs() {
-        1 => (net.clone() | net),
-        2 => net,
-        _ => panic!("only 1 and 2 inputs are supported!"),
-    }
-}
-
-fn connect_node_vec(node_vec: Arc<Vec<Net>>, starting_net: Option<Net>) -> Net {
-    let nodes = (*node_vec).clone();
-    let mut net = starting_net.unwrap_or_else(|| Net::wrap(Box::new(multipass::<U2>())));
-    for node in nodes {
-        net = to_stereo(net) >> node;
-    }
-    net
 }

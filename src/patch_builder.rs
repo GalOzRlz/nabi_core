@@ -1,45 +1,12 @@
-use crate::effects_builders::FxChainFactory;
+use crate::common_definitions::params::ParamInfo;
+use crate::effects::effects_building::FxChainFactory;
 use crate::tunings::TunerBuilder;
 use crate::{SharedMidiState, SynthFactory};
 use fundsp::prelude64::AudioUnit;
 use inventory;
-use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use toml;
 use toml::Table;
-
-#[derive(Debug, Clone)]
-pub enum ParamType {
-    Float,
-    Int,
-    String,
-}
-
-#[derive(Debug, Clone)]
-pub enum ParamDefault {
-    Float(f64),
-    Int(i64),
-    String(&'static str),
-}
-
-#[derive(Debug, Clone)]
-pub struct ParamInfo {
-    pub name: &'static str,
-    pub param_type: ParamType,
-    pub default: ParamDefault,
-    pub description: Option<&'static str>,
-}
-pub trait Parameterized: Sized {
-    fn param_info() -> &'static [ParamInfo];
-
-    fn from_table(table: &Table) -> Self
-    where
-        Self: DeserializeOwned + Default,
-    {
-        let value: toml::Value = table.clone().into();
-        Self::deserialize(value).unwrap_or_default()
-    }
-}
 
 pub type CcMap = HashMap<String, usize>;
 // ---- Knob labels (shared with effects_builders) ----

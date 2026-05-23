@@ -1,6 +1,6 @@
 use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::master_limiter;
-use crate::effects_builders::FxChainFactory;
+use crate::effects::effects_building::FxChainFactory;
+use crate::effects::master_fx::master_limiter;
 use crate::patch_builder::KnobGroup;
 use crate::{
     NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, patch_builder::PatchTable,

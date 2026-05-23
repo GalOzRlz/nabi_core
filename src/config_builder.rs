@@ -1,5 +1,5 @@
 use crate::SynthFactory;
-use crate::effects_builders::FxChainFactory;
+use crate::effects::effects_building::FxChainFactory;
 use crate::patch_builder::{PatchDef, PatchTable};
 use crate::tunings::{TunerBuilder, TunerEntry};
 use fundsp::math::midi_hz;

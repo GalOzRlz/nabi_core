@@ -14,32 +14,24 @@
 //!   into `SynthFunc` functions with a variety of properties.
 //! * The `sounds` module contains `SynthFunc` functions that produce a variety of live sounds.
 
-mod backend;
-pub mod community_patches;
+mod common_definitions;
 pub mod config_builder;
 mod effects;
-mod effects_builders;
-mod eqs;
-mod factories;
-mod instruments;
+pub mod experimental;
+mod helpers;
 pub mod io;
-mod modulators;
-mod oximedia_effects;
 pub mod patch_builder;
 mod patch_helpers;
-pub mod sounds;
+mod sound_engine;
 pub mod tunings;
 
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::ops::Index;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
+use crate::helpers::cc::cc_smooth;
 use crate::patch_builder::{KnobGroup, KnobLabel, SoundBuilder, SoundEntry};
 use crate::patch_helpers::Adsr;
 use crate::tunings::TunerBuilder;
+use fundsp::audionode::Pipe;
+use fundsp::follow::Follow;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -47,6 +39,11 @@ use fundsp::prelude64::{adsr_live, shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::MidiMsg;
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::ops::Index;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use toml::Table;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
@@ -239,12 +236,12 @@ impl SharedMidiState {
         Some(var(&self.fx_cc_vals[idx - 1]))
     }
 
-    pub fn get_fx_cc_or(&self, cc: usize, default: f32) -> An<Var> {
-        self.fx_cc(cc).unwrap_or(var(&shared(default)))
+    pub fn get_fx_cc_or(&self, cc: usize, default: f32) -> An<Pipe<Var, Follow<f64>>> {
+        self.fx_cc(cc).unwrap_or(var(&shared(default))) >> cc_smooth()
     }
 
-    pub fn get_sound_cc_or(&self, cc: usize, default: f32) -> An<Var> {
-        self.sound_cc(cc).unwrap_or(var(&shared(default)))
+    pub fn get_sound_cc_or(&self, cc: usize, default: f32) -> An<Pipe<Var, Follow<f64>>> {
+        self.sound_cc(cc).unwrap_or(var(&shared(default))) >> cc_smooth()
     }
 
     /// Changes how MIDI notes are converted to pitches. Defaults to equal temperament.

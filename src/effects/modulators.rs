@@ -1,4 +1,4 @@
-use crate::effects::to_net;
+use crate::helpers::fundsp::to_net;
 use fundsp::funutd::math::Float;
 use fundsp::math::{SegmentInterpolator, ease_noise, spline_noise};
 use fundsp::prelude::WaveSynth;

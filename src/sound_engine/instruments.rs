@@ -1,19 +1,7 @@
+use crate::sound_engine::params::Polarity;
 use fundsp::prelude64::*;
 use std::cmp::max;
 
-pub enum Polarity {
-    Positive,
-    Negative,
-}
-
-impl Polarity {
-    fn to_float(&self) -> f32 {
-        match self {
-            Polarity::Positive => 1.0,
-            Polarity::Negative => -1.0,
-        }
-    }
-}
 /// A comb-filter based plucked string synthesizer with independent pitch and gate control.
 ///
 /// # Inputs
