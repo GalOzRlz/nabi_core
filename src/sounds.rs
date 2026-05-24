@@ -1,0 +1,384 @@
+use crate::sound_builders::{Adsr, IntoSpeakerDef, ProgramTable, simple_sound};
+use crate::{SharedMidiState, program_table};
+use fundsp::net::Net;
+use fundsp::prelude::{
+    AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass,
+    resonator_hz,
+};
+use fundsp::prelude64::{
+    adsr_live, clip, constant, dsf_saw, dsf_square, follow, highpass_hz, lowpass_q, organ, product,
+    pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var,
+};
+
+/// Returns a `ProgramTable` containing all prepared sounds in this file.
+pub fn options() -> ProgramTable {
+    program_table![
+        ("Simple Triangle", simple_triangle),
+        ("Triangle", adsr_triangle),
+        ("Organ", adsr_organ),
+        ("Sine", adsr_sine),
+        ("Saw", adsr_saw),
+        ("Soft Saw", adsr_soft_saw),
+        ("Square", adsr_square),
+        ("Pulse", adsr_pulse),
+        ("DSF Saw", adsr_dsf_saw),
+        ("DSF Square", adsr_dsf_square),
+        ("Moog Organ", moog_organ),
+        ("Moog Saw", moog_saw),
+        ("Moog Soft Saw", moog_soft_saw),
+        ("Moog Square", moog_square),
+        ("Moog Pulse", moog_pulse),
+        ("Acoustic Grand Piano", acoustic_grand_piano),
+        ("Xylophone", xylophone),
+        ("Clavichord (Sharp)", clavichord_sharp),
+        ("Clavichord (Soft)", clavichord_soft),
+        ("Guitar-ish", guitarish),
+        ("Music Box", music_box::<74>)
+    ]
+}
+
+/// Returns a `ProgramTable` containing sounds that are personal favorites of the crate author.
+pub fn favorites() -> ProgramTable {
+    program_table![
+        ("80s Beep", simple_triangle),
+        ("Triangle", adsr_triangle),
+        ("Organ", adsr_organ),
+        ("Saw", adsr_saw),
+        ("Soft Saw", adsr_soft_saw),
+        ("Square", adsr_square),
+        ("Pulse", adsr_pulse),
+        ("Moog Organ", moog_organ),
+        ("Moog Saw", moog_saw),
+        ("Moog Square", moog_square),
+        ("Moog Pulse", moog_pulse),
+        ("Acoustic Grand Piano", acoustic_grand_piano),
+        ("Xylophone", xylophone),
+        ("Clavichord (Sharp)", clavichord_sharp),
+        ("Clavichord (Soft)", clavichord_soft),
+        ("Guitar-ish", guitarish)
+    ]
+}
+
+/// Returns a `ProgramTable` containing Moog sounds.
+pub fn moogs() -> ProgramTable {
+    program_table![
+        ("Moog Organ", moog_organ),
+        ("Moog Pulse", moog_pulse),
+        ("Moog Saw", moog_saw),
+        ("Moog Square", moog_square)
+    ]
+}
+
+/// Returns an on-off Triangle wave.
+pub fn simple_triangle(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    simple_sound(state, Box::new(triangle() * 4.4))
+}
+
+/// ADSR envelope used in some sounds.
+pub const ADSR1: Adsr = Adsr {
+    attack: 0.1,
+    decay: 0.2,
+    sustain: 0.4,
+    release: 0.4,
+};
+
+/// ADSR envelope used in sounds benefiting from a long decay and release.
+pub const ADSR2: Adsr = Adsr {
+    attack: 0.1,
+    decay: 0.4,
+    sustain: 0.4,
+    release: 0.6,
+};
+
+/// Triangle wave modulated by an ADSR.
+pub fn adsr_triangle(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(Box::new(triangle() * 4.4), ADSR1.boxed(state))
+}
+
+/// Organ wave modulated by an ADSR.
+pub fn adsr_organ(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(Box::new(organ() * 3.45), ADSR1.boxed(state))
+}
+
+/// Sine wave modulated by an ADSR.
+pub fn adsr_sine(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(Box::new(sine()), ADSR1.boxed(state))
+}
+
+/// Sawtooth wave modulated by an ADSR.
+pub fn adsr_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(Box::new(saw() * 2.3), ADSR1.boxed(state))
+}
+
+/// Soft sawtooth wave modulated by an ADSR.
+pub fn adsr_soft_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(Box::new(soft_saw() * 4.0), ADSR1.boxed(state))
+}
+
+/// Square wave modulated by an ADSR.
+pub fn adsr_square(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(Box::new(square() * 2.5), ADSR1.boxed(state))
+}
+
+/// Pulse wave modulated by an ADSR.
+pub fn adsr_pulse(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    ADSR2.assemble_timed(Box::new(pulse() * 2.8), state)
+}
+
+/// DSF Sawtooth wave modulated by an ADSR.
+pub fn adsr_dsf_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    ADSR2.assemble_timed(Box::new(dsf_saw() * 0.08), state)
+}
+
+/// DSF Square wave modulated by an ADSR.
+pub fn adsr_dsf_square(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    ADSR2.assemble_timed(Box::new(dsf_square() * 0.08), state)
+}
+
+/// Pulse wave through a Moog filter modulated by an ADSR.
+pub fn moog_pulse(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_pitched_sound(
+        Box::new(ADSR2.timed_moog(
+            Box::new(ADSR2.timed_sound(Box::new(pulse() * 4.5), state)),
+            state,
+        )),
+        ADSR2.boxed(state),
+    )
+}
+
+/// Square wave through a Moog filter modulated by an ADSR.
+pub fn moog_square(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(
+        Box::new(ADSR2.timed_moog(Box::new(square() * 5.625), state)),
+        ADSR2.boxed(state),
+    )
+}
+
+/// Sawtooth wave through a Moog filter modulated by an ADSR.
+pub fn moog_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(
+        Box::new(ADSR2.timed_moog(Box::new(saw() * 5.0), state)),
+        ADSR2.boxed(state),
+    )
+}
+
+/// Sawtooth wave through a Moog filter modulated by an ADSR.
+pub fn moog_soft_saw(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(
+        Box::new(ADSR2.timed_moog(Box::new(soft_saw() * 7.6), state)),
+        ADSR2.boxed(state),
+    )
+}
+
+/// Organ wave through a Moog filtered modulated by an ADSR.
+pub fn moog_organ(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    state.assemble_unpitched_sound(
+        Box::new(ADSR2.timed_moog(Box::new(organ() * 6.7), state)),
+        ADSR2.boxed(state),
+    )
+}
+
+pub fn acoustic_grand_piano(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let piano_adsr = Adsr {
+        attack: 0.002,
+        decay: 0.8,
+        sustain: 0.2,
+        release: 0.7,
+    };
+
+    let a1 = 0.9;
+    let a2 = 0.55;
+    let a3 = 0.42;
+    let a4 = 0.38;
+    let a5 = 0.25;
+    let a6 = 0.13;
+    let a7 = 0.02;
+    let a8 = 0.015;
+    let a9 = 0.01;
+
+    let tone = (mul(1.0) >> sine() * a1)
+        & (mul(2.0) >> sine() * a2)
+        & (mul(3.0) >> sine() * a3)
+        & (mul(4.0) >> sine() * a4)
+        & (mul(5.0) >> sine() * a5)
+        & (mul(6.0) >> sine() * a6)
+        & (mul(7.0) >> sine() * a7)
+        & (mul(8.0) >> sine() * a8)
+        & (mul(9.0) >> sine() * a9)
+            >> lowpass_hz(400.0, 0.8)
+            >> highshelf_hz(2000.0, db_amp(-12.0), 0.0)
+            >> dcblock::<f64>();
+
+    let body = pass()
+        & (0.25 * resonator_hz(82.4, 25.0))
+        & (0.20 * resonator_hz(110.0, 22.0))
+        & (0.18 * resonator_hz(146.8, 20.0))
+        & (0.15 * resonator_hz(220.0, 18.0))
+        & (0.12 * resonator_hz(293.7, 16.0))
+        & (0.10 * resonator_hz(440.0, 14.0))
+        & (0.08 * resonator_hz(587.3, 12.0))
+        & (0.06 * resonator_hz(880.0, 10.0))
+        & (0.04 * resonator_hz(1760.0, 8.0))
+        & (0.02 * resonator_hz::<f64>(800.0, 10.0) * brown::<f64>());
+
+    let synth = Box::new(
+        tone >> body >> highpass_hz(20.0, 0.7) >> limiter(0.002, 0.06) >> dcblock::<f64>(),
+    );
+
+    state.assemble_unpitched_sound(synth, piano_adsr.boxed(state))
+}
+
+pub fn xylophone(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let xylophone_adsr = Adsr {
+        attack: 0.01,
+        decay: 0.3,
+        sustain: 0.0,
+        release: 0.15,
+    };
+
+    let a1 = 0.70;
+    let a2 = 0.28;
+    let a3 = 0.14;
+    let a4 = 0.07;
+    let a5 = 0.03;
+
+    let bar_modes = (mul(1.0) >> sine() * a1)
+        & (mul(3.998) >> sine() * a2)
+        & (mul(10.0) >> sine() * a3)
+        & (mul(20.0) >> sine() * a4)
+        & (mul(27.0) >> sine() * a5)
+            >> highshelf_hz(2500.0, db_amp(1.5), 0.2)
+            >> lowpass_hz(6500.0, 0.7)
+            >> dcblock::<f64>();
+
+    let tone = bar_modes >> (pass() ^ (highpass_hz(3000.0, 0.7) * 0.18)) >> join::<U2>();
+
+    let body = (pass() * 0.7)
+        & (0.18 * resonator_hz(800.0, 85.0))
+        & (0.14 * resonator_hz(1600.0, 95.0))
+        & (0.10 * resonator_hz(2400.0, 110.0))
+        & (0.07 * resonator_hz(3200.0, 130.0));
+
+    let synth = Box::new(
+        tone >> body >> highpass_hz(30.0, 0.7) >> dcblock::<f64>() >> limiter(0.002, 0.12),
+    );
+
+    state.assemble_unpitched_sound(synth, xylophone_adsr.boxed(state))
+}
+
+/// Sharp clavichord sound
+pub fn clavichord_sharp(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.005,
+        decay: 0.2,
+        sustain: 0.0,
+        release: 0.5,
+    };
+    state.assemble_unpitched_sound(basic_pluck(), adsr.boxed(state))
+}
+
+/// Soft clavichord sound
+pub fn clavichord_soft(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.01,
+        decay: 0.2,
+        sustain: 0.1,
+        release: 0.5,
+    };
+    state.assemble_unpitched_sound(basic_pluck(), adsr.boxed(state))
+}
+
+fn basic_pluck() -> Box<dyn AudioUnit> {
+    Box::new((square() & saw()) >> lowpass_hz::<f32>(3000.0, 0.5))
+}
+
+fn guitarish_pitched(pitch: Net) -> Net {
+    Net::stack(pitch, Net::wrap(Box::new(var(&shared(0.3)))))
+        >> pulse()
+        >> lowpass_hz::<f32>(3000.0, 0.5)
+}
+
+/// An attempt at an acoustic-guitar inspired sound.
+pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.005,
+        decay: 1.0,
+        sustain: 0.0,
+        release: 0.5,
+    };
+    let mix = Net::stack(state.bent_pitch(), Net::wrap(Box::new(var(&shared(0.3)))))
+        >> pulse()
+        >> lowpass_hz::<f32>(3000.0, 0.5);
+    state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
+}
+
+pub fn wide_chorus_guitarish_l(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.005,
+        decay: 1.0,
+        sustain: 0.0,
+        release: 0.6,
+    };
+    let base_pitch = state.bent_pitch();
+    let lfo = sine_hz(3.5) * 0.0065;
+    let pitch = base_pitch.clone() * (constant(1.0) + lfo);
+    let g = guitarish_pitched(pitch);
+    state.assemble_pitched_sound(Box::new(g), adsr.boxed(state))
+}
+
+pub fn wide_chorus_guitarish_r(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let adsr = Adsr {
+        attack: 0.007,
+        decay: 1.05,
+        sustain: 0.0,
+        release: 0.65,
+    };
+    let base_pitch = state.bent_pitch();
+    let lfo = sine_hz(3.0) * 0.0165;
+    let pitch = base_pitch.clone() * (constant(1.0) + lfo);
+    let g = guitarish_pitched(pitch);
+    state.assemble_pitched_sound(Box::new(g), adsr.boxed(state))
+}
+
+/// Something between a celesta and a prepared-piano with filter cutoff mapped to specified midi CC constant
+pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    let synth_adsr = Adsr {
+        attack: 0.002,
+        decay: 0.0,
+        sustain: 1.0,
+        release: 0.6,
+    };
+    let a1 = 0.600;
+    let a2 = 0.350;
+    let a3 = 0.200;
+    let a4 = 0.100;
+    let gate = state.control_var();
+
+    let modes = mul(1.000)
+        >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.0, synth_adsr.release))
+        & (mul(2.756) >> sine() * a1)
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))
+        & (mul(5.404) >> sine() * a2)
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release))
+        & (mul(8.933) >> sine() * a3)
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 10.0, 0.0, synth_adsr.release))
+        & (mul(13.34) >> sine() * a4)
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release))
+            >> dcblock::<f64>();
+
+    let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
+    let body = (pass() * 0.4)
+        & (0.5 * resonator_hz(150.0, 20.0))
+        & (0.3 * resonator_hz(320.0, 25.0))
+        & (0.1 * resonator_hz(550.0, 15.0));
+
+    // set cutoff stream with smoothing
+    let cutoff_val = state.control_change_var(CC);
+    let max_cutoff_hz = 5_000.0;
+    let combined = tone >> body >> highpass_hz(30.0, 0.7) * db_amp(-4.0);
+    let cutoff_hrz = product(constant(max_cutoff_hz / 127.0), cutoff_val);
+    let synth = Box::new(
+        (combined | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0) >> dcblock::<f64>() >> clip(),
+    );
+    state.assemble_unpitched_sound(synth, synth_adsr.boxed(state))
+}
