@@ -1,5 +1,4 @@
 use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::effects_building::FxChainFactory;
 use crate::effects::master_fx::master_limiter;
 use crate::patch_builder::KnobGroup;
 use crate::sound_engine::sound_building::SynthFunc;
@@ -397,13 +396,13 @@ impl<const N: usize> DubleSpeaker<N> for SynthPlayer<N> {
         T: Sample + FromSample<f32> + SizedSample,
     {
         let sample_rate = config.sample_rate as f64;
-        let mut sound = self.center_source.mix_net_backend();
-        sound.reset();
-        sound.set_sample_rate(sample_rate);
+        let mut mix = self.center_source.mix_net_backend();
+        mix.reset();
+        mix.set_sample_rate(sample_rate);
         let input_buffer = self.buffers.input.clone();
         let mut output_buffer = self.buffers.output.clone();
         let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
-            sound.process(
+            mix.process(
                 n_frames,
                 &input_buffer.buffer_ref(),
                 &mut output_buffer.buffer_mut(),
@@ -477,7 +476,6 @@ struct VoiceManager<const N: usize> {
     master_volume: Shared,
     patch_table: Arc<PatchTable>,
     config: GlobalConfig,
-    effects: FxChainFactory,
     fx_node_id: NodeId,
     sound_node_id: NodeId,
     mix_net: Net,
@@ -526,7 +524,6 @@ impl<const N: usize> VoiceManager<N> {
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
-            effects: first_table.effects.clone(),
             sound_cc_vals: vec![0.0; sound_len],
             fx_cc_vals: vec![0.0; effect_len],
             cc_to_knob,
@@ -554,9 +551,12 @@ impl<const N: usize> VoiceManager<N> {
         let backend = self.mix_net.backend();
         let sound = self.sound();
         self.sound_node_id = self.mix_net.chain(Box::new(sound));
-        self.fx_node_id = self
-            .mix_net
-            .chain(Box::new(self.effects.build(&self.states[0])));
+        let table = self.patch_table.clone();
+        if let Some(entry) = table.entries.get(self.current_patch_num) {
+            self.fx_node_id = self
+                .mix_net
+                .chain(Box::new(entry.effects.clone().build(&self.states[0])));
+        }
         self.mix_net.commit();
         backend
     }
@@ -718,14 +718,17 @@ impl<const N: usize> VoiceManager<N> {
         self.current_patch_num = new_num as usize;
     }
     fn apply_init_cc_vals(&mut self) {
-        // 1. Apply effect initial CCs to effect knobs
-        for (i, &val) in self.effects.initial_cc.iter().enumerate() {
-            println!("FX {}, {}", i, val);
-            if i < self.fx_cc_vals.len() {
-                self.fx_cc_vals[i] = val;
-                for state in self.states.iter_mut() {
-                    if i < state.effect_cc_count {
-                        state.fx_cc_vals[i].set_value(val);
+        let table = self.patch_table.clone();
+        if let Some(entry) = table.entries.get(self.current_patch_num) {
+            // 1. Apply effect initial CCs to effect knobs
+            for (i, &val) in entry.effects.initial_cc.iter().enumerate() {
+                println!("FX {}, {}", i, val);
+                if i < self.fx_cc_vals.len() {
+                    self.fx_cc_vals[i] = val;
+                    for state in self.states.iter_mut() {
+                        if i < state.effect_cc_count {
+                            state.fx_cc_vals[i].set_value(val);
+                        }
                     }
                 }
             }
