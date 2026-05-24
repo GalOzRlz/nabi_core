@@ -1,8 +1,33 @@
-const WELL_C_MINUS_1: f32 = 8.20354352009375;
+use fundsp::math::midi_hz;
+use inventory;
+
+const WELL_C_MINUS_1: f32 = 8.203_544;
 
 /// C standard in hertz on equal temperament with A as 440 hertz.
 /// Rf: https://inspiredacoustics.com/en/MIDI_note_numbers_and_center_frequencies
 const STANDARD_C: f32 = 8.18;
+
+/// A tuner converts a MIDI note (0–127) to a frequency (Hz).
+pub type TunerBuilder = fn(f32) -> f32;
+
+#[macro_export]
+macro_rules! register_tuner {
+    ($name:expr, $tuner:ident) => {
+        inventory::submit! {
+            TunerEntry {
+                name: $name,
+                tuner: $tuner as fn(f32) -> f32,
+            }
+        }
+    };
+}
+
+pub struct TunerEntry {
+    pub name: &'static str,
+    pub tuner: TunerBuilder,
+}
+
+inventory::collect!(TunerEntry);
 
 /// Terry Riley's "Harp of New Albion" tuning which is a modified Malcolm tuning (Limit-5).
 /// Adapted from the Scala library: https://www.huygens-fokker.org/scala/
@@ -13,17 +38,17 @@ pub fn just_intonation(midi_pitch: f32) -> f32 {
         * STANDARD_C
         * match midi_pitch % 12 {
             0 => 1.0,
-            1 => 1.06666667,          // 16/15
-            2 => 1.125,               // 9/8
-            3 => 1.2,                 // 6.5
-            4 => 1.28,                // 5.4
-            5 => 1.3333333333333333,  // 4/3
-            6 => 1.4222222222222223,  // 64/45
-            7 => 1.5,                 // 3/2
-            8 => 1.6,                 // 8/5
-            9 => 1.6666666666666667,  // 5/3
-            10 => 1.7777777777777777, // 16/9
-            11 => 1.875,              // 15/8
+            1 => 1.066_666_7,  // 16/15
+            2 => 1.125,        // 9/8
+            3 => 1.2,          // 6.5
+            4 => 1.28,         // 5.4
+            5 => 1.333_333_4,  // 4/3
+            6 => 1.422_222_3,  // 64/45
+            7 => 1.5,          // 3/2
+            8 => 1.6,          // 8/5
+            9 => 1.666_666_6,  // 5/3
+            10 => 1.777_777_8, // 16/9
+            11 => 1.875,       // 15/8
             _ => panic!("Unreachable"),
         }
 }
@@ -37,17 +62,17 @@ pub fn well_temperament(midi_pitch: f32) -> f32 {
         * WELL_C_MINUS_1
         * match midi_pitch % 12 {
             0 => 1.0,
-            1 => 1.058267369,
-            2 => 1.119929822,
-            3 => 1.187864957,
-            4 => 1.254242807,
-            5 => 1.3363480780010195,
-            6 => 1.411023157998401,
-            7 => 1.4966160640051305,
-            8 => 1.5856094859970158,
-            9 => 1.6761049619985275,
-            10 => 1.7797864719968166,
-            11 => 1.8813642110048348,
+            1 => 1.058_267_4,
+            2 => 1.119_929_8,
+            3 => 1.187_864_9,
+            4 => 1.254_242_8,
+            5 => 1.336_348,
+            6 => 1.411_023_1,
+            7 => 1.496_616,
+            8 => 1.585_609_4,
+            9 => 1.676_104_9,
+            10 => 1.779_786_5,
+            11 => 1.881_364_2,
             _ => panic!("Unreachable"),
         }
 }
@@ -112,3 +137,7 @@ mod tests {
         }
     }
 }
+
+register_tuner!("just intonation", just_intonation);
+register_tuner!("well-tempered", well_temperament);
+register_tuner!("standard equal", midi_hz);

@@ -19,7 +19,7 @@
 
 # 0.6.9
   * Updated to `fundsp 0.23.0`
-  * As the current `fundsp` depends on `std` in `resample.rs`, and since [this pull request](https://github.com/gjf2a/midi_fundsp/pull/3) was concerned with disabling the `files` feature, I updated `Cargo.toml` to enable `std` and `fft`.
+  * As the current `fundsp` depends on `std` in `resample.rs`, and since [this pull request](https://github.com/gjf2a/nabi_core/pull/3) was concerned with disabling the `files` feature, I updated `Cargo.toml` to enable `std` and `fft`.
 
 # 0.6.8
   * Updated to `fundsp 0.22.0`
@@ -94,11 +94,11 @@
 
 # 0.3.0
   * Updated to `midi-msg 0.5.0`.
-  * [Disabled `files` feature in `fundsp`](https://github.com/gjf2a/midi_fundsp/pull/3), as this library does not open any files.
+  * [Disabled `files` feature in `fundsp`](https://github.com/gjf2a/nabi_core/pull/3), as this library does not open any files.
   * Changed API for `start_output_thread()`. 
     * Instead of relying on the `AtomicCell` variable `quit` to determine when to stop, it now relies upon receiving a MIDI `SystemReset` message. 
     * That message will be sent by `start_input_thread()` when its `quit` variable is set to `true`. It will reset `quit` to `false` once it has finished running.
-    * This change fixes a [bug](https://github.com/gjf2a/midi_fundsp/issues/2) which was caused by the output thread in [`choice_demo.rs`](https://github.com/gjf2a/midi_fundsp/blob/master/examples/choice_demo.rs) failing to exit, a consequence of an unpredictable sequence of when the `reset` variable would be changed back to `false`.
+    * This change fixes a [bug](https://github.com/gjf2a/nabi_core/issues/2) which was caused by the output thread in [`choice_demo.rs`](https://github.com/gjf2a/nabi_core/blob/master/examples/choice_demo.rs) failing to exit, a consequence of an unpredictable sequence of when the `reset` variable would be changed back to `false`.
 
 # 0.2.1
   * A `NoteOn` message with a velocity of zero is treated as a `NoteOff` message. Some devices implement `NoteOff` in this way, and this change supports them.
