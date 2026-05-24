@@ -366,15 +366,15 @@ trait DubleSpeaker<const N: usize> {
 
 /// The default player that has one stereo stream in and one out (U2 inputs, U2 outputs)
 struct SynthPlayer<const N: usize> {
-    center_source: VoiceManager<N>,
+    voice_manager: VoiceManager<N>,
     buffers: Buffers,
 }
 
 impl<const N: usize> DubleSpeaker<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
-        let center_source = VoiceManager::<N>::new(patch_table.clone(), config);
+        let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
         Self {
-            center_source,
+            voice_manager,
             buffers: Buffers {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
@@ -383,12 +383,12 @@ impl<const N: usize> DubleSpeaker<N> for SynthPlayer<N> {
     }
 
     fn sound(&mut self) -> Net {
-        self.center_source.sound()
+        self.voice_manager.sound()
     }
 
     fn decode(&mut self, _speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
         let result = None;
-        result.or(self.center_source.decode(msg))
+        result.or(self.voice_manager.decode(msg))
     }
 
     fn get_stream<T>(&mut self, config: &StreamConfig, device: &Device) -> anyhow::Result<Stream>
@@ -396,7 +396,7 @@ impl<const N: usize> DubleSpeaker<N> for SynthPlayer<N> {
         T: Sample + FromSample<f32> + SizedSample,
     {
         let sample_rate = config.sample_rate as f64;
-        let mut mix = self.center_source.mix_net_backend();
+        let mut mix = self.voice_manager.mix_net_backend();
         mix.reset();
         mix.set_sample_rate(sample_rate);
         let input_buffer = self.buffers.input.clone();
@@ -498,8 +498,8 @@ impl<const N: usize> VoiceManager<N> {
         let effect_len = config.fx_cc_mapping.len().max(1);
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build();
-        let fx_cc_array = first_table.effects.initial_cc.clone();
-        let sound_cc_array = first_table.sound_factory.initial_cc.clone();
+        let fx_cc_array = &first_table.effects.initial_cc;
+        let sound_cc_array = &first_table.sound_factory.initial_cc;
         let tuner = first_table.tuning;
         let mut master_fx_net = Net::new(2, 2);
 
@@ -755,15 +755,15 @@ impl<const N: usize> VoiceManager<N> {
     }
     fn change_patch(&mut self, program: &u8) {
         let table = self.patch_table.clone();
-        if let Some(entry) = table.entries.get(*program as usize) {
+        if let Some(mut entry) = table.entries.get(*program as usize) {
             self.synth_func = entry.sound_factory.build();
-            let tuner = entry.tuning;
+            let tuner = entry.tuning.clone();
             self.set_midi_to_hz(tuner);
             self.current_patch_num = *program as usize;
             let new_sound_net = self.sound();
-            let new_fx_net = entry.effects.clone().build(&self.states[0]); // todo: call directly
-            self.mix_net
-                .crossfade(self.fx_node_id, Fade::Smooth, 0.01, Box::new(new_fx_net));
+            let new_fx_net = entry.effects.clone().build(&self.states[0]);
+            self.mix_net // todo: make fade time for effects configurable?
+                .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
             self.mix_net.crossfade(
                 self.sound_node_id,
                 Fade::Smooth,
