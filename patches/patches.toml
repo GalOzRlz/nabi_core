@@ -31,7 +31,7 @@ tuning = "just intonation"
 chain = ["reverb"]
 [program.effects.reverb]
 # Construction parameters (never modulated)
-room_size = 8.8
+room_size = 3.8
 damping   = 0.5
 length    = 4.2
 wet_amount = 0.3

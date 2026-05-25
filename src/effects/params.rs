@@ -1,5 +1,7 @@
 use crate::common_definitions::params::{ParamDefault, ParamInfo, ParamType, Parameterized};
-use serde::Deserialize;
+use oximedia_effects::stereo_widener::WidenerMode;
+use oximedia_effects::stereo_widener::WidenerMode::{HaasDelay, MidSide, PhaseSpread};
+use serde::{Deserialize, Deserializer};
 
 #[derive(Deserialize)]
 #[serde(default)]
@@ -78,13 +80,21 @@ impl Parameterized for ReverbParams {
     fn param_info() -> &'static [ParamInfo] {
         &[
             ParamInfo {
-                name: "Room Size",
+                name: "room_size",
                 param_type: ParamType::Float,
                 default: ParamDefault::Float(0.8),
                 description: Some("The size of the simulated room"),
             },
             ParamInfo {
-                name: "Damping",
+                name: "damping",
+                param_type: ParamType::ZeroToOneFloat,
+                default: ParamDefault::ZeroToOneFloat(0.5),
+                description: Some(
+                    "How much higher frequency suppression will occur in the reverb over time",
+                ),
+            },
+            ParamInfo {
+                name: "length",
                 param_type: ParamType::Float,
                 default: ParamDefault::Float(0.5),
                 description: Some(
@@ -92,5 +102,37 @@ impl Parameterized for ReverbParams {
                 ),
             },
         ]
+    }
+}
+fn stereo_widening_types<'de, D>(deserializer: D) -> Result<WidenerMode, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "midside" => Ok(MidSide),
+        "haas" => Ok(HaasDelay),
+        "phase_spread" => Ok(PhaseSpread),
+        _ => Err(serde::de::Error::unknown_variant(
+            &s,
+            &["midside", "haas", "phase_spread"],
+        )),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct WidenerParams {
+    width: f32,
+    #[serde(deserialize_with = "stereo_widening_types")]
+    mode: WidenerMode,
+}
+
+impl Default for WidenerParams {
+    fn default() -> Self {
+        Self {
+            width: 0.7,
+            mode: PhaseSpread,
+        }
     }
 }

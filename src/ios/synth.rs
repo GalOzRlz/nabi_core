@@ -390,20 +390,21 @@ impl<const N: usize> VoiceManager<N> {
                             }
                         }
                         // Print labels
-                        // if let Some(prog) =
-                        //     self.patch_table.clone().entries.get(self.current_patch_num)
-                        // {
-                        //     for lbl in prog
-                        //         .effects
-                        //         .knob_labels
-                        //         .iter()
-                        //         .chain(prog.sound_factory.knob_labels.iter())
-                        //     {
-                        //         if lbl.group == group && lbl.index == idx + 1 {
-                        //             eprintln!("{}: {}", lbl.label.to_ascii_uppercase(), value);
-                        //         }
-                        //     }
-                        // }
+                        if let Some(prog) =
+                            self.patch_table.clone().entries.get(self.current_patch_num)
+                        {
+                            for lbl in prog
+                                .effects
+                                .knob_labels
+                                .iter()
+                                .chain(prog.sound_factory.knob_labels.iter())
+                            {
+                                println!("{:?}", lbl);
+                                if lbl.group == group && lbl.index == idx + 1 {
+                                    eprintln!("{}: {}", lbl.label.to_ascii_uppercase(), value);
+                                }
+                            }
+                        }
                     }
                 }
                 _ => {}

@@ -3,5 +3,5 @@ mod eqs;
 mod helpers;
 pub mod master_fx;
 mod modulators;
-mod oximedia_effects;
+mod oximedia_stereo_effects;
 mod params;
