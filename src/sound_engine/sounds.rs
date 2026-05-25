@@ -50,17 +50,14 @@
 // register_sound!("chorused_dirty_guitar", chorused_dirty_guitar);
 // register_sound!("plastic_pipe", plastic_pipe);
 
-use crate::common_definitions::params::{ParamInfo, Parameterized};
+use crate::SharedMidiState;
 use crate::sound_engine::params::TwoOscMorphParams;
-use crate::sound_engine::sound_building::SoundBuilder;
-use crate::sound_engine::sound_building::SoundEntry;
-use crate::{SharedMidiState, register_sound};
 use fundsp::audiounit::AudioUnit;
 use fundsp::prelude64::*;
 
 // todo: make this into morph2: 2 osc with custom morphing and leveling - 2 morph cc 2 volume cc for each osc
 pub fn saw_to_square(_params: &TwoOscMorphParams, state: &SharedMidiState) -> Box<dyn AudioUnit> {
-    let b_cc = state.get_sound_cc_or(1, 0.5);
+    let b_cc = state.get_sound_an_or(1, 0.5);
     let synth = Box::new(
         (square() * (constant(1.0) - b_cc.clone()) & saw() * b_cc) * 2.0
             >> lowpass_hz(10000.0, 0.5),
@@ -68,12 +65,12 @@ pub fn saw_to_square(_params: &TwoOscMorphParams, state: &SharedMidiState) -> Bo
     state.assemble_unpitched_sound(synth, state.boxed_adsr())
 }
 
-register_sound!(
-    name: "Square_saw_soft",
-    params: TwoOscMorphParams,
-    factory: saw_to_square,
-    cc_params: [("balance", 1)]
-);
+// register_sound!(
+//     name: "Square_saw_soft",
+//     params: TwoOscMorphParams,
+//     factory: saw_to_square,
+//     cc_params: [("balance", 1)]
+// );
 
 //todo: add a general synth: pro6 style...2 oscillators with shapes cascading (saw, trianle, pulse) - detune control,
 // todo: this should be an engine with 2 oscilators with independent levels (pulse width modulation too?), detune and pitch shit of 1 octave up and down

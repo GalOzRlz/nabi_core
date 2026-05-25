@@ -1,7 +1,46 @@
-use crate::common_definitions::params::{ParamDefault, ParamInfo, ParamType, Parameterized};
+use crate::common_definitions::params::ParamType;
 use oximedia_effects::stereo_widener::WidenerMode;
 use oximedia_effects::stereo_widener::WidenerMode::{HaasDelay, MidSide, PhaseSpread};
 use serde::{Deserialize, Deserializer};
+
+#[derive(Debug, Clone)]
+pub struct CcParam {
+    pub default_value: ParamType,
+    pub cc_index: usize,
+    pub(crate) name: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct NonCcParam {
+    pub default_value: ParamType,
+    name: &'static str,
+}
+
+#[derive(Clone)]
+pub(crate) struct Parameterized {
+    pub(crate) name: &'static str,
+    pub(crate) cc_params: &'static [CcParam],
+    pub(crate) non_cc_params: &'static [NonCcParam], // use slice if possible
+}
+impl Parameterized {
+    pub fn get_cc_param(&self, name: &str) -> Option<&CcParam> {
+        for i in self.cc_params.iter() {
+            if i.name == name {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    pub fn get_non_cc_param(&self, name: &str) -> Option<&NonCcParam> {
+        for i in self.non_cc_params.iter() {
+            if i.name == name {
+                return Some(i);
+            }
+        }
+        None
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(default)]
@@ -10,17 +49,6 @@ pub struct NoParams {}
 impl Default for NoParams {
     fn default() -> Self {
         Self {}
-    }
-}
-
-impl Parameterized for NoParams {
-    fn param_info() -> &'static [ParamInfo] {
-        &[ParamInfo {
-            name: "No parameter",
-            param_type: ParamType::Float,
-            default: ParamDefault::Float(0.0),
-            description: None,
-        }]
     }
 }
 
@@ -39,71 +67,12 @@ impl Default for Eq2Params {
         }
     }
 }
-impl Parameterized for Eq2Params {
-    fn param_info() -> &'static [ParamInfo] {
-        &[
-            ParamInfo {
-                name: "Low Pass Q",
-                param_type: ParamType::Float,
-                default: ParamDefault::Float(0.8),
-                description: None,
-            },
-            ParamInfo {
-                name: "High Pass Q",
-                param_type: ParamType::Float,
-                default: ParamDefault::Float(0.5),
-                description: None,
-            },
-        ]
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(default)]
 pub struct ReverbParams {
-    pub room_size: f32,
-    pub damping: f32,
-    pub length: f32,
+    pub room_size: CcParam,
+    pub damping: CcParam,
+    pub length: CcParam,
 }
 
-impl Default for ReverbParams {
-    fn default() -> Self {
-        Self {
-            room_size: 3.8,
-            damping: 0.7,
-            length: 1.5,
-        }
-    }
-}
-
-impl Parameterized for ReverbParams {
-    fn param_info() -> &'static [ParamInfo] {
-        &[
-            ParamInfo {
-                name: "room_size",
-                param_type: ParamType::Float,
-                default: ParamDefault::Float(0.8),
-                description: Some("The size of the simulated room"),
-            },
-            ParamInfo {
-                name: "damping",
-                param_type: ParamType::ZeroToOneFloat,
-                default: ParamDefault::ZeroToOneFloat(0.5),
-                description: Some(
-                    "How much higher frequency suppression will occur in the reverb over time",
-                ),
-            },
-            ParamInfo {
-                name: "length",
-                param_type: ParamType::Float,
-                default: ParamDefault::Float(0.5),
-                description: Some(
-                    "How much higher frequency suppression will occur in the reverb over time",
-                ),
-            },
-        ]
-    }
-}
 fn stereo_widening_types<'de, D>(deserializer: D) -> Result<WidenerMode, D::Error>
 where
     D: Deserializer<'de>,

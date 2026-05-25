@@ -27,7 +27,9 @@ pub mod tui;
 pub mod tunings;
 
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
+use crate::effects::params::CcParam;
 use crate::helpers::cc::cc_smooth;
+use crate::helpers::fundsp::to_net;
 use crate::patch_helpers::Adsr;
 use crate::tunings::TunerBuilder;
 use fundsp::audionode::Pipe;
@@ -151,12 +153,23 @@ impl SharedMidiState {
         Some(var(&self.fx_cc_vals[idx - 1]))
     }
 
-    pub fn get_fx_cc_or(&self, cc: usize, default: f32) -> An<Pipe<Var, Follow<f64>>> {
-        self.fx_cc(cc).unwrap_or(var(&shared(default))) >> cc_smooth()
+    pub fn get_fx_an_default(&self, cc: &CcParam) -> An<Pipe<Var, Follow<f64>>> {
+        self.fx_cc(cc.cc_index)
+            .unwrap_or(var(&shared(cc.default_value.get_f32().unwrap())))
+            >> cc_smooth()
     }
 
-    pub fn get_sound_cc_or(&self, cc: usize, default: f32) -> An<Pipe<Var, Follow<f64>>> {
-        self.sound_cc(cc).unwrap_or(var(&shared(default))) >> cc_smooth()
+    pub fn get_sound_an_or(&self, cc: &CcParam) -> An<Pipe<Var, Follow<f64>>> {
+        self.sound_cc(cc.cc_index)
+            .unwrap_or(var(&shared(cc.default_value.get_f32().unwrap())))
+            >> cc_smooth()
+    }
+
+    pub fn get_fx_net_or_default(&self, cc: &CcParam) -> Net {
+        to_net(self.get_fx_an_default(cc))
+    }
+    pub fn get_sound_net_or(&self, cc: &CcParam) -> Net {
+        to_net(self.get_sound_an_or(cc))
     }
 
     /// Changes how MIDI notes are converted to pitches. Defaults to equal temperament.

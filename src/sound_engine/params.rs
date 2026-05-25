@@ -1,4 +1,3 @@
-use crate::common_definitions::params::{ParamDefault, ParamInfo, ParamType, Parameterized};
 use fundsp::audiounit::AudioUnit;
 use fundsp::prelude64::{constant, poly_pulse, poly_saw, poly_square, sine, triangle};
 use serde::{Deserialize, Deserializer};
@@ -89,16 +88,5 @@ impl Default for TwoOscMorphParams {
             oscillator_type_1: OscillatorType::Triangle,
             oscillator_type_2: OscillatorType::Sine,
         }
-    }
-}
-
-impl Parameterized for TwoOscMorphParams {
-    fn param_info() -> &'static [ParamInfo] {
-        &[ParamInfo {
-            name: "balance",
-            param_type: ParamType::ZeroToOneFloat,
-            default: ParamDefault::ZeroToOneFloat(0.5),
-            description: None,
-        }]
     }
 }

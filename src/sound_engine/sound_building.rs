@@ -1,5 +1,4 @@
 use crate::SharedMidiState;
-use crate::common_definitions::params::ParamInfo;
 use crate::patch_builder::{KnobGroup, KnobLabel};
 use fundsp::audiounit::AudioUnit;
 use serde::de::DeserializeOwned;
@@ -14,7 +13,6 @@ pub type SoundBuilder = fn(state: &SharedMidiState, config: &Table) -> Box<dyn A
 pub struct SoundEntry {
     pub name: &'static str,
     pub builder: SoundBuilder,
-    pub param_info: fn() -> &'static [ParamInfo],
     pub cc_params: &'static [(&'static str, usize)],
 }
 
@@ -38,7 +36,6 @@ macro_rules! register_sound {
                     let params = <$params_type as Parameterized>::from_table(config);
                     $factory_fn(&params, state)
                 }) as SoundBuilder,
-                param_info: <$params_type as Parameterized>::param_info as fn() -> &'static [ParamInfo],
                 cc_params: &[ $( ($cc_name, $cc_default_knob) ),* ],
             }
         }

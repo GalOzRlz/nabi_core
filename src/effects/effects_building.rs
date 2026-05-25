@@ -1,7 +1,8 @@
 use crate::SharedMidiState;
-use crate::common_definitions::params::ParamInfo;
 use crate::config_builder::TomlEffectSection;
 use crate::effects::helpers::to_stereo;
+use crate::effects::master_fx::EFFECTS;
+use crate::effects::params::Parameterized;
 use crate::patch_builder::{KnobGroup, KnobLabel};
 use fundsp::prelude64::{Net, NodeId};
 use std::collections::HashMap;
@@ -14,23 +15,18 @@ macro_rules! register_effect {
         name: $name:expr,
         params: $params_type:ty,
         factory: $factory_fn:ident,
-        cc_params: [ $( ($cc_name:expr, $cc_default_knob:expr) ),* $(,)? ]
     ) => {
         inventory::submit! {
             EffectDef {
                 name: $name,
-                factory: (|config: &toml::Table,
-                           cc_map: &std::collections::HashMap<String, usize>|
+                factory: (|config: Parameterized |
                  -> EffectFunc {
-                    let params = <$params_type as Parameterized>::from_table(config);
-                    $factory_fn(&params, cc_map)
+                    let params = $params_type;
+                    $factory_fn(&params)
                 }) as fn(
                     &toml::Table,
-                    &std::collections::HashMap<String, usize>,
                 ) -> EffectFunc,
-                // Store the function pointer, not the result
-                param_info: <$params_type as Parameterized>::param_info as fn() -> &'static [ParamInfo],
-                cc_params: &[ $( ($cc_name, $cc_default_knob) ),* ],
+                config: &[ $( ($cc_name, $cc_default_knob) ),* ],
             }
         }
     };
@@ -40,12 +36,10 @@ pub type EffectFunc = Box<dyn Fn(&SharedMidiState) -> Net + Send + Sync + 'stati
 
 pub type EffectFactory = fn(construction: &Table, knob_map: &HashMap<String, usize>) -> EffectFunc;
 
+#[derive(Clone)]
 pub struct EffectDef {
-    pub name: &'static str,
-    pub factory: EffectFactory,
-    /// Returns parameter metadata when called.
-    pub param_info: fn() -> &'static [ParamInfo],
-    pub cc_params: &'static [(&'static str, usize)],
+    pub factory: fn(Parameterized) -> EffectFunc,
+    pub params: Parameterized,
 }
 
 inventory::collect!(EffectDef);
@@ -78,14 +72,10 @@ impl FxChainFactory {
             Arc::new(self.chain.iter().map(|fx| fx(shared_midi_state)).collect());
         self.connect_node_vec(arc_vec)
     }
-    pub fn new(
-        effects_config: Option<&TomlEffectSection>,
-        effect_cc_count: usize, // from GlobalConfig.fx_cc_mapping.len()
-    ) -> Self {
+    pub fn new(effects_config: Option<&TomlEffectSection>, effect_cc_count: usize) -> Self {
         // Build the effect registry once
-        let registry: HashMap<&str, &EffectDef> = inventory::iter::<EffectDef>()
-            .map(|e| (e.name, e))
-            .collect();
+        let registry: HashMap<&str, &EffectDef> =
+            EFFECTS.iter().map(|e| (e.params.name.clone(), e)).collect();
         let mut knob_labels = Vec::with_capacity(effect_cc_count);
         // If there are no effects, return an empty chain
         let Some(effects) = effects_config else {
@@ -127,12 +117,12 @@ impl FxChainFactory {
                 .and_then(|v| v.as_table());
 
             // def.cc_params is now &[(name, default_knob)] – no default value
-            for (fx_name, default_knob) in def.cc_params.iter() {
-                let mut knob = *default_knob;
+            for param in def.params.cc_params.iter() {
+                let mut knob = param.cc_index;
 
                 // User override?
                 if let Some(m) = user_mappings {
-                    if let Some(val) = m.get(*fx_name).and_then(|v| v.as_integer()) {
+                    if let Some(val) = m.get(fx_name).and_then(|v| v.as_integer()) {
                         knob = val as usize;
                     }
                 }
@@ -149,7 +139,7 @@ impl FxChainFactory {
                 knob_labels.push(KnobLabel {
                     group: KnobGroup::Effect,
                     index: knob,
-                    label: format!("{}: {}", fx_name, fx_name),
+                    label: format!("{}", fx_name),
                 });
             }
             println!("knob map: {:?}", knob_map);
@@ -165,7 +155,7 @@ impl FxChainFactory {
                 }
             }
             // The factory converts `construction` into the proper struct internally
-            let closure = (def.factory)(&construction, &knob_map);
+            let closure = (def.factory)(def.params.clone());
             chain.push(closure);
         }
         FxChainFactory {
