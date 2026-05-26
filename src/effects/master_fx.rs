@@ -4,6 +4,7 @@ use crate::effects::effects_building::EffectFunc;
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
 use crate::helpers::fundsp::to_net;
 use fundsp::prelude64::*;
+use std::borrow::Cow;
 
 use linkme::distributed_slice;
 
@@ -73,12 +74,12 @@ static REVERB: EffectDef = EffectDef {
     factory: fundsp_reverb_factory,
     params: Parameterized {
         name: "reverb",
-        cc_params: Some(&[CcParam {
+        cc_params: Some(Cow::Borrowed(&[CcParam {
             default: ParamType::ZeroToOneFloat(0.4),
             cc_index: 1,
             name: "mix",
-        }]),
-        non_cc_params: None, // todo: add before you move on to sounds!
+        }])),
+        non_cc_params: None,
     },
 };
 

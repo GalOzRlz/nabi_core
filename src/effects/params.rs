@@ -1,4 +1,4 @@
-use crate::common_definitions::params::CcParam;
+pub(crate) use crate::common_definitions::params::CcParam;
 use oximedia_effects::stereo_widener::WidenerMode;
 use oximedia_effects::stereo_widener::WidenerMode::{HaasDelay, MidSide, PhaseSpread};
 use serde::{Deserialize, Deserializer};

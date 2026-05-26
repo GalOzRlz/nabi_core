@@ -262,8 +262,8 @@ impl<const N: usize> VoiceManager<N> {
         let effect_len = config.fx_cc_mapping.len().max(1);
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build();
-        let fx_cc_array = &first_table.effects.initial_cc;
-        let sound_cc_array = &first_table.sound_factory.initial_cc;
+        let fx_cc_array = &first_table.effects.get_initial_cc();
+        let sound_cc_array = &first_table.sound_factory.get_initial_cc;
         let tuner = first_table.tuning;
         let mut master_fx_net = Net::new(2, 2);
 
@@ -272,7 +272,7 @@ impl<const N: usize> VoiceManager<N> {
                 &config.sound_cc_mapping,
                 &config.fx_cc_mapping,
                 &sound_cc_array,
-                &fx_cc_array,
+                fx_cc_array,
                 tuner,
             )
         });
@@ -389,22 +389,6 @@ impl<const N: usize> VoiceManager<N> {
                                 }
                             }
                         }
-                        // Print labels
-                        if let Some(prog) =
-                            self.patch_table.clone().entries.get(self.current_patch_num)
-                        {
-                            for lbl in prog
-                                .effects
-                                .knob_labels
-                                .iter()
-                                .chain(prog.sound_factory.knob_labels.iter())
-                            {
-                                println!("{:?}", lbl);
-                                if lbl.group == group && lbl.index == idx + 1 {
-                                    eprintln!("{}: {}", lbl.label.to_ascii_uppercase(), value);
-                                }
-                            }
-                        }
                     }
                 }
                 _ => {}
@@ -486,7 +470,7 @@ impl<const N: usize> VoiceManager<N> {
         let table = self.patch_table.clone();
         if let Some(entry) = table.entries.get(self.current_patch_num) {
             // 1. Apply effect initial CCs to effect knobs
-            for (i, &val) in entry.effects.initial_cc.iter().enumerate() {
+            for (i, &val) in entry.effects.get_initial_cc().iter().enumerate() {
                 println!("FX {}, {}", i, val);
                 if i < self.fx_cc_vals.len() {
                     self.fx_cc_vals[i] = val;
@@ -502,7 +486,7 @@ impl<const N: usize> VoiceManager<N> {
         // 2. Apply sound initial CCs to sound parameters
         for (i, &val) in self.patch_table.entries[self.current_patch_num]
             .sound_factory
-            .initial_cc
+            .get_initial_cc
             .iter()
             .enumerate()
         {

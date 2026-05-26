@@ -64,7 +64,7 @@ pub struct SoundFactory {
     pub builder: SoundBuilder,
     pub knob_labels: Vec<KnobLabel>,
     pub config: Table,
-    pub initial_cc: Vec<f32>,
+    pub get_initial_cc: Vec<f32>,
 }
 
 impl SoundFactory {
@@ -112,7 +112,7 @@ impl SoundFactory {
             builder,
             knob_labels,
             config: config.clone(),
-            initial_cc: initial_knobs,
+            get_initial_cc: initial_knobs,
         }
     }
 

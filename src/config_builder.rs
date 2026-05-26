@@ -176,7 +176,6 @@ pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig
         .collect();
 
     let default_tuner = midi_hz;
-    let effect_cc_count = global_config.fx_cc_mapping.len().max(1);
     let sound_cc_count = global_config.sound_cc_mapping.len().max(1);
     let mut patch_defs = Vec::new();
 
@@ -195,7 +194,7 @@ pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig
         };
 
         // --- build effect chain ---
-        let fx_chain = FxChainFactory::new(prog.effects.as_ref(), effect_cc_count);
+        let fx_chain = FxChainFactory::new(prog.effects.as_ref());
 
         // --- assemble PatchDef ---
         let patch_def = PatchDef {
