@@ -26,8 +26,8 @@ mod sound_engine;
 pub mod tui;
 pub mod tunings;
 
+use crate::common_definitions::params::CcParam;
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
-use crate::effects::params::CcParam;
 use crate::helpers::cc::cc_smooth;
 use crate::helpers::fundsp::to_net;
 use crate::patch_helpers::Adsr;

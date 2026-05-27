@@ -1,4 +1,4 @@
-use crate::sound_engine::params::Polarity;
+use crate::common_definitions::params::Polarity;
 use fundsp::prelude64::*;
 use std::cmp::max;
 

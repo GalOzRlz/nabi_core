@@ -57,10 +57,9 @@ impl FxChainFactory {
 
     pub fn connect_node_vec(&mut self, node_vec: Arc<Vec<Net>>) -> Net {
         let mut nodeid_vec: Vec<NodeId> = Vec::with_capacity(node_vec.len());
-        let nodes = (*node_vec).clone();
         let mut net = Net::new(2, 2);
-        for node in nodes {
-            let id = net.chain(Box::new(to_stereo(node)));
+        for node in node_vec.iter() {
+            let id = net.chain(Box::new(to_stereo(node.clone())));
             nodeid_vec.push(id)
         }
         self.node_ids = Some(nodeid_vec);
@@ -73,7 +72,7 @@ impl FxChainFactory {
         for (idx, effect) in self.fx_names.as_ref().unwrap().iter().enumerate() {
             let params_arc = self.definitions.as_ref().unwrap()[idx].clone();
             let factory = get_effect_from_registry(effect, &registry).factory;
-            let closure = (factory)(params_arc.clone());
+            let closure = (factory)(params_arc);
             chain.push(closure);
         }
         self.chain = Arc::new(chain);
