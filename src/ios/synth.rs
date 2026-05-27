@@ -277,8 +277,9 @@ impl<const N: usize> VoiceManager<N> {
             )
         });
 
-        let fx_node_id =
-            master_fx_net.chain(Box::new(first_table.effects.clone().build(&states[0])));
+        let fx_node_id = master_fx_net.chain(Box::new(
+            first_table.effects.clone().build_chain(&states[0]),
+        ));
         Self {
             states,
             next: ModNumC::new(0),
@@ -319,7 +320,7 @@ impl<const N: usize> VoiceManager<N> {
         if let Some(entry) = table.entries.get(self.current_patch_num) {
             self.fx_node_id = self
                 .mix_net
-                .chain(Box::new(entry.effects.clone().build(&self.states[0])));
+                .chain(Box::new(entry.effects.clone().build_chain(&self.states[0])));
         }
         self.mix_net.commit();
         backend
@@ -510,7 +511,7 @@ impl<const N: usize> VoiceManager<N> {
             self.set_midi_to_hz(tuner);
             self.current_patch_num = program;
             let new_sound_net = self.sound();
-            let new_fx_net = entry.effects.clone().build(&self.states[0]);
+            let new_fx_net = entry.effects.clone().build_chain(&self.states[0]);
             self.mix_net // todo: make fade time for effects configurable?
                 .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
             self.mix_net.crossfade(

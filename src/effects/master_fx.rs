@@ -4,9 +4,9 @@ use crate::effects::effects_building::EffectFunc;
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
 use crate::helpers::fundsp::to_net;
 use fundsp::prelude64::*;
-use std::borrow::Cow;
-
 use linkme::distributed_slice;
+use std::borrow::Cow;
+use std::sync::Arc;
 
 #[distributed_slice]
 pub static EFFECTS: [EffectDef] = [..];
@@ -53,7 +53,7 @@ fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32, room_size: f32, dampi
 //     cc_params: [("depth", 2)]
 // );
 
-fn fundsp_reverb_factory(params: Parameterized) -> EffectFunc {
+fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
         let room_size_param = params.get_non_cc_param("room_size").unwrap();
         let damping_param = params.get_non_cc_param("damping").unwrap();
@@ -75,7 +75,7 @@ static REVERB: EffectDef = EffectDef {
     params: Parameterized {
         name: "reverb",
         cc_params: Some(Cow::Borrowed(&[CcParam {
-            default: ParamType::ZeroToOneFloat(0.4),
+            default: ParamType::ZeroToOneFloat(0.35),
             cc_index: 1,
             name: "mix",
         }])),

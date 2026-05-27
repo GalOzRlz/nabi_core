@@ -12,9 +12,22 @@ pub type EffectFunc = Box<dyn Fn(&SharedMidiState) -> Net + Send + Sync + 'stati
 
 pub type EffectFactory = fn(construction: &Table, knob_map: &HashMap<String, usize>) -> EffectFunc;
 
+type EffectsRegistry = HashMap<&'static str, &'static EffectDef>;
+
+pub fn get_effects_registry() -> EffectsRegistry {
+    let registry: EffectsRegistry = EFFECTS.iter().map(|e| (e.params.name, e)).collect();
+    registry
+}
+
+pub fn get_effect_from_registry(fx_name: &str, registry: &EffectsRegistry) -> &'static EffectDef {
+    registry
+        .get(fx_name)
+        .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name))
+}
+
 #[derive(Clone)]
 pub struct EffectDef {
-    pub factory: fn(Parameterized) -> EffectFunc,
+    pub factory: fn(Arc<Parameterized>) -> EffectFunc,
     pub params: Parameterized,
 }
 
@@ -22,7 +35,7 @@ pub struct EffectDef {
 pub struct FxChainFactory {
     pub chain: Arc<Vec<EffectFunc>>,
     pub node_ids: Option<Vec<NodeId>>,
-    pub definitions: Option<Vec<Parameterized>>,
+    pub definitions: Option<Vec<Arc<Parameterized>>>,
     pub fx_names: Option<Vec<String>>,
 }
 
@@ -53,16 +66,29 @@ impl FxChainFactory {
         self.node_ids = Some(nodeid_vec);
         net
     }
+    /// Rebuilds the chain and connects its Net based off of the struct definitions
+    pub fn reassembled_chain(&mut self, shared_midi_state: &SharedMidiState) -> Net {
+        let registry = get_effects_registry();
+        let mut chain = Vec::new();
+        for (idx, effect) in self.fx_names.as_ref().unwrap().iter().enumerate() {
+            let params_arc = self.definitions.as_ref().unwrap()[idx].clone();
+            let factory = get_effect_from_registry(effect, &registry).factory;
+            let closure = (factory)(params_arc.clone());
+            chain.push(closure);
+        }
+        self.chain = Arc::new(chain);
+        self.build_chain(shared_midi_state)
+    }
 
-    pub fn build(&mut self, shared_midi_state: &SharedMidiState) -> Net {
+    /// Builds and connects the nets of the existing chain
+    pub fn build_chain(&mut self, shared_midi_state: &SharedMidiState) -> Net {
         println!("initial cc: {:?}", self.get_initial_cc());
         let arc_vec: Arc<Vec<Net>> =
             Arc::new(self.chain.iter().map(|fx| fx(shared_midi_state)).collect());
         self.connect_node_vec(arc_vec)
     }
     pub fn new(effects_config: Option<&TomlEffectSection>) -> Self {
-        let registry: HashMap<&str, &EffectDef> =
-            EFFECTS.iter().map(|e| (e.params.name.clone(), e)).collect();
+        let registry = get_effects_registry();
         let Some(effects) = effects_config else {
             return FxChainFactory {
                 chain: Arc::new(Vec::new()),
@@ -75,9 +101,7 @@ impl FxChainFactory {
         let mut fx_names = Vec::new();
         let mut chain = Vec::new();
         for fx_name in &effects.chain {
-            let mut def = registry
-                .get(fx_name.as_str())
-                .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name));
+            let def = get_effect_from_registry(fx_name, &registry);
             let mut runtime_params = def.params.clone();
             // ---- Construction values (raw TOML table, exactly what the factory expects) ----
             let mut toml_overrides = Table::new();
@@ -115,10 +139,11 @@ impl FxChainFactory {
                 apply_toml_overrides(non_cc_params.to_mut(), fx_name, &toml_overrides);
             }
 
-            definitions.push(runtime_params.clone());
-            let closure = (def.factory)(runtime_params);
+            let runtime_arc = Arc::new(runtime_params);
+            let closure = (def.factory)(runtime_arc.clone());
             chain.push(closure);
             fx_names.push(fx_name.to_string());
+            definitions.push(runtime_arc.clone());
         }
         FxChainFactory {
             chain: Arc::new(chain),
