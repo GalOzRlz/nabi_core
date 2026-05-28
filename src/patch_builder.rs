@@ -20,7 +20,7 @@ pub struct KnobLabel {
 
 #[derive(Clone)]
 pub struct PatchDef {
-    pub sound_factory: SoundFactory,
+    pub sounds: SoundFactory,
     pub name: String,
     pub tuning: TunerBuilder,
     pub effects: FxChainFactory,

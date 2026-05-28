@@ -66,15 +66,13 @@ pub fn morph2(params: &Parameterized, state: &SharedMidiState) -> Box<dyn AudioU
     let fm_amount_1 = 2.0; // cc option by default
     let fm_amount_2 = 1.0; // same
 
-    // morph factor 1 and 2 cc controlled
     let balance_1 = params.get_cc_param("balance_1").unwrap();
     let b1_cc = state.get_sound_an_or(balance_1);
 
-    // morph factor 1 and 2 cc controlled
     let balance_2 = params.get_cc_param("balance_2").unwrap();
     let b2_cc = state.get_sound_an_or(balance_2);
 
-    //sine_hz(f * ratio) * (f * depth) + f >> sine()
+    // FM: osc(f * ratio) * (f * depth) + f >> sine()
     let osc_1b = ((state.bent_pitch() * fm_ratio) >> osc_1a.clone())
         * (state.bent_pitch() * fm_amount_1)
         + state.bent_pitch()

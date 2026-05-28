@@ -9,6 +9,8 @@
 function = "Square_saw_soft"
 name = "soft square+saw"
 tuning = "just intonation"
+[program.sound]
+
 [program.effects]
 chain = ["eq2", "reverb"]
 [program.effects.reverb]

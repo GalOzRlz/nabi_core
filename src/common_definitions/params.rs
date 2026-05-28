@@ -1,9 +1,14 @@
+use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use anyhow::anyhow;
 use fundsp::prelude64::{An, U1, Unit, poly_pulse, poly_saw, poly_square, sine, triangle, unit};
 use serde::{Deserialize, Deserializer};
 use std::borrow::Cow;
 use std::str::FromStr;
 use toml::Table;
+
+pub trait CcInit {
+    fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP];
+}
 
 #[derive(Debug, Clone)]
 pub enum ParamType {
@@ -54,10 +59,10 @@ pub struct NonCcParam {
     pub name: &'static str,
 }
 #[derive(Clone)]
-pub(crate) struct Parameterized {
-    pub(crate) name: &'static str,
-    pub(crate) cc_params: Option<Cow<'static, [CcParam]>>,
-    pub(crate) non_cc_params: Option<Cow<'static, [NonCcParam]>>,
+pub struct Parameterized {
+    pub name: &'static str,
+    pub cc_params: Option<Cow<'static, [CcParam]>>,
+    pub non_cc_params: Option<Cow<'static, [NonCcParam]>>,
 }
 impl Parameterized {
     pub fn get_cc_param(&self, name: &str) -> anyhow::Result<&CcParam> {

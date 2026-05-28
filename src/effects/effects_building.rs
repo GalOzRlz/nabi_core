@@ -1,19 +1,21 @@
 use crate::SharedMidiState;
-use crate::common_definitions::params::{Parameterized, apply_toml_overrides};
+use crate::common_definitions::params::{CcInit, Parameterized, apply_toml_overrides};
 use crate::config_builder::{MAX_KNOBS_PER_GROUP, TomlEffectSection};
 use crate::effects::helpers::to_stereo;
-use crate::effects::master_fx::EFFECTS;
 use fundsp::prelude64::{Net, NodeId};
+use linkme::distributed_slice;
 use std::collections::HashMap;
 use std::sync::Arc;
 use toml::Table;
 
+#[distributed_slice]
+pub static EFFECTS: [EffectDef] = [..];
+
 pub type EffectFunc = Box<dyn Fn(&SharedMidiState) -> Net + Send + Sync + 'static>;
 
-pub type EffectFactory = fn(construction: &Table, knob_map: &HashMap<String, usize>) -> EffectFunc;
+pub type EffectFactory = fn(Arc<Parameterized>) -> EffectFunc;
 
 type EffectsRegistry = HashMap<&'static str, &'static EffectDef>;
-
 pub fn get_effects_registry() -> EffectsRegistry {
     let registry: EffectsRegistry = EFFECTS.iter().map(|e| (e.params.name, e)).collect();
     registry
@@ -27,7 +29,7 @@ pub fn get_effect_from_registry(fx_name: &str, registry: &EffectsRegistry) -> &'
 
 #[derive(Clone)]
 pub struct EffectDef {
-    pub factory: fn(Arc<Parameterized>) -> EffectFunc,
+    pub factory: EffectFactory,
     pub params: Parameterized,
 }
 
@@ -39,8 +41,8 @@ pub struct FxChainFactory {
     pub fx_names: Option<Vec<String>>,
 }
 
-impl FxChainFactory {
-    pub fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP] {
+impl CcInit for FxChainFactory {
+    fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP] {
         let mut cc_array = [0_f32; MAX_KNOBS_PER_GROUP];
         if let Some(definitions) = &self.definitions {
             for params in definitions {
@@ -54,7 +56,9 @@ impl FxChainFactory {
         println!("initial cc array: {:?}", cc_array);
         cc_array
     }
+}
 
+impl FxChainFactory {
     pub fn connect_node_vec(&mut self, node_vec: Arc<Vec<Net>>) -> Net {
         let mut nodeid_vec: Vec<NodeId> = Vec::with_capacity(node_vec.len());
         let mut net = Net::new(2, 2);
@@ -100,8 +104,8 @@ impl FxChainFactory {
         let mut fx_names = Vec::new();
         let mut chain = Vec::new();
         for fx_name in &effects.chain {
-            let def = get_effect_from_registry(fx_name, &registry);
-            let mut runtime_params = def.params.clone();
+            let entry = get_effect_from_registry(fx_name, &registry);
+            let mut runtime_params = entry.params.clone();
             // ---- Construction values (raw TOML table, exactly what the factory expects) ----
             let mut toml_overrides = Table::new();
             if let Some(eff_cfg) = effects
@@ -139,7 +143,7 @@ impl FxChainFactory {
             }
 
             let runtime_arc = Arc::new(runtime_params);
-            let closure = (def.factory)(runtime_arc.clone());
+            let closure = (entry.factory)(runtime_arc.clone());
             chain.push(closure);
             fx_names.push(fx_name.to_string());
             definitions.push(runtime_arc.clone());

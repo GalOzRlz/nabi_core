@@ -111,6 +111,13 @@ pub struct TomlPatchDef {
 }
 
 #[derive(Deserialize, Clone)]
+pub struct TomlSoundConfigSection {
+    pub mapping: HashMap<String, toml::Value>,
+    #[serde(flatten)]
+    pub extras: HashMap<String, toml::Value>,
+}
+
+#[derive(Deserialize, Clone)]
 pub struct TomlEffectSection {
     pub chain: Vec<String>,
     #[serde(flatten)]
@@ -198,7 +205,7 @@ pub fn build_patch_table(programs: &[TomlPatchDef], global_config: &GlobalConfig
 
         // --- assemble PatchDef ---
         let patch_def = PatchDef {
-            sound_factory: SoundFactory::new(
+            sounds: SoundFactory::new(
                 prog.function.as_str(),
                 prog.config.clone().unwrap_or_default(),
                 sound_cc_count,

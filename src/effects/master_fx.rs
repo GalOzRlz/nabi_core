@@ -1,15 +1,12 @@
 use crate::common_definitions::params::{CcParam, ParamType, Parameterized};
-use crate::effects::effects_building::EffectDef;
 use crate::effects::effects_building::EffectFunc;
+use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
 use crate::helpers::fundsp::to_net;
 use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
 use std::sync::Arc;
-
-#[distributed_slice]
-pub static EFFECTS: [EffectDef] = [..];
 
 pub fn master_limiter() -> Net {
     let block = dcblock() >> limiter(0.002, 0.3);

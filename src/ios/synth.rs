@@ -1,3 +1,4 @@
+use crate::common_definitions::params::CcInit;
 use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::master_fx::master_limiter;
 use crate::ios::midi::PatchButton;
@@ -261,9 +262,9 @@ impl<const N: usize> VoiceManager<N> {
         let sound_len = config.sound_cc_mapping.len().max(1);
         let effect_len = config.fx_cc_mapping.len().max(1);
         let first_table = &patch_table.clone().entries[0];
-        let synth_func = first_table.sound_factory.build();
+        let synth_func = first_table.sounds.build();
         let fx_cc_array = &first_table.effects.get_initial_cc();
-        let sound_cc_array = &first_table.sound_factory.get_initial_cc;
+        let sound_cc_array = &first_table.sounds.get_initial_cc();
         let tuner = first_table.tuning;
         let mut master_fx_net = Net::new(2, 2);
 
