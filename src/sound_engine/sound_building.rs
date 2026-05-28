@@ -29,8 +29,8 @@ pub type SoundBuilder = fn(state: &SharedMidiState, config: &Parameterized) -> B
 
 #[derive(Clone)]
 pub struct SoundFactory {
-    pub builder: SoundBuilder,
-    pub params: Parameterized,
+    builder: SoundBuilder,
+    pub params: Arc<Parameterized>,
 }
 
 /// `SynthFunc` objects translate `SharedMidiState` values into [fundsp](https://crates.io/crates/fundsp) audio graphs.
