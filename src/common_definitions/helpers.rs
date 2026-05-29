@@ -1,6 +1,6 @@
 use fundsp::Frame;
-use fundsp::audiounit::Unit;
-use fundsp::prelude64::{An, U1, map, unit};
+use fundsp::audionode::Map;
+use fundsp::prelude64::{An, U1, map};
 
 pub fn quantize_u8_to_01(value: u8) -> f32 {
     let norm = value as f32 / 127.0;
@@ -8,8 +8,6 @@ pub fn quantize_u8_to_01(value: u8) -> f32 {
 }
 
 /// Quantizes 0.0-1.0 values into 0.1 steps
-pub fn quantize_01_step() -> An<Unit<U1, U1>> {
-    unit::<U1, U1>(Box::new(map(|i: &Frame<f32, U1>| {
-        (i[0] * 100_f32).round() / 100_f32
-    })))
+pub fn quantize_01_step() -> An<Map<fn(&Frame<f32, U1>) -> f32, U1, f32>> {
+    map(|i: &Frame<f32, U1>| (i[0] * 100_f32).round() / 100_f32)
 }
