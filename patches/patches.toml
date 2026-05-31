@@ -9,11 +9,6 @@
 function = "morph2"
 name = "morph2 A"
 tuning = "just intonation"
-[program.sound]
-something = 1
-another = 2
-[program.sound.config]
-else = 0.2
 [program.effects]
 chain = ["eq2", "reverb"]
 [program.effects.reverb.cofig]

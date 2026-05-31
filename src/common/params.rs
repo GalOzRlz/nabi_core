@@ -5,9 +5,10 @@ use crate::helpers::fundsp::to_net;
 use anyhow::anyhow;
 use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
-use fundsp::prelude::{join, pulse};
-use fundsp::prelude32::Var;
-use fundsp::prelude64::{An, Net, U1, U2, Unit, pass, poly_saw, poly_square, sine, triangle, unit};
+use fundsp::prelude64::{
+    An, AudioUnit, Net, U1, U2, Unit, Var, join, pass, poly_saw, poly_square, pulse, sine,
+    triangle, unit,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -28,36 +29,50 @@ pub trait CcInit {
     fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP];
 }
 
+fn to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U1, U1>> {
+    unit::<U1, U1>(audiounit)
+}
+
+fn stereo_to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U2, U1>> {
+    unit::<U2, U1>(audiounit)
+}
+
 #[derive(Debug, Clone)]
 pub enum ParamType {
     U8(u8),
-    String(Cow<'static, str>),
+    Oscillator(Cow<'static, str>),
     ZeroOneFloat(f32),
     ZeroHundredFloat(f32),
+    ADSR([f32; 4]),
+    Noise(Cow<'static, str>),
 }
 
 impl ParamType {
     pub fn as_zero_to_one_f32(&self) -> Option<f32> {
         match &self {
             ParamType::U8(v) => Some(quantize_u8_to_01(*v.clamp(&0, &127))),
-            ParamType::String(_) => None,
+            ParamType::Oscillator(_) => None,
+            ParamType::ADSR(_) => None,
             ParamType::ZeroOneFloat(v) => Some(v.clamp(0.0, 1.0)),
             ParamType::ZeroHundredFloat(v) => Some((*v / 100.0).clamp(0.0, 1.0)),
+            ParamType::Noise(_) => None,
         }
     }
 
     pub fn as_f32(&self) -> Option<f32> {
         match &self {
             ParamType::U8(v) => Some(*v as f32),
-            ParamType::String(_) => None,
+            ParamType::Oscillator(_) => None,
+            ParamType::ADSR(_) => None,
             ParamType::ZeroOneFloat(v) => Some(v.clamp(0.0, 1.0)),
             ParamType::ZeroHundredFloat(v) => Some(*v),
+            &&ParamType::Noise(_) => None,
         }
     }
 
     pub fn as_oscillator_type(&self) -> Result<OscillatorType, &'static str> {
         match self {
-            ParamType::String(s) => OscillatorType::from_str(s),
+            ParamType::Oscillator(s) => OscillatorType::from_str(s),
             _ => Err("parameter is not a string, cannot convert to oscillator type"),
         }
     }
@@ -67,9 +82,10 @@ impl std::fmt::Display for ParamType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParamType::U8(v) => write!(f, "{}", v),
-            ParamType::String(s) => write!(f, "{}", s),
+            ParamType::Oscillator(s) => write!(f, "{}", s),
             ParamType::ZeroOneFloat(v) => write!(f, "{}", v),
             ParamType::ZeroHundredFloat(v) => write!(f, "{}", v),
+            _ => todo!(),
         }
     }
 }
@@ -211,7 +227,19 @@ where
                         *v = num as u8;
                     }
                 }
-                ParamType::String(s) => {
+                ParamType::Oscillator(s) => {
+                    if let Some(str_val) = toml_value.as_str() {
+                        *s = osc_string_to_cow(str_val);
+                    }
+                }
+                ParamType::ADSR(array) => {
+                    if let Some(new_array) = toml_value.as_array() {
+                        for (idx, val) in new_array.iter().enumerate() {
+                            array[idx] = val.as_float().unwrap_or(0.0) as f32;
+                        }
+                    }
+                }
+                ParamType::Noise(s) => {
                     if let Some(str_val) = toml_value.as_str() {
                         *s = osc_string_to_cow(str_val);
                     }
@@ -247,23 +275,26 @@ impl Polarity {
 }
 
 #[derive(serde::Deserialize)]
+pub enum NoiseType {
+    White,
+    Pink,
+    Brown,
+}
+
+#[derive(serde::Deserialize)]
 pub enum OscillatorType {
     Saw,
     Triangle,
     Sine,
     Pulse,
     Square,
-    WhiteNoise,
-    BrownNoise,
-    PinkNoise,
-    WaveTable(String), // todo: how to implement?!
+    WaveTable(String),
     None,
 }
 
 impl FromStr for OscillatorType {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        type Err = &'static str;
         let lower = s.to_lowercase();
         match lower.as_str() {
             "saw" => Ok(OscillatorType::Saw),
@@ -272,13 +303,12 @@ impl FromStr for OscillatorType {
             "pulse" => Ok(OscillatorType::Pulse),
             "square" => Ok(OscillatorType::Square),
             "none" => Ok(OscillatorType::None),
-            // we assume it's a file path
-            file_path => Ok(OscillatorType::WaveTable(file_path.parse().unwrap())), // todo: add other tables!
+            file_path => Ok(OscillatorType::WaveTable(file_path.parse().unwrap())),
         }
     }
 }
 fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
-    match s {
+    match s.to_lowercase().as_str() {
         "saw" => Cow::Borrowed("saw"),
         "triangle" => Cow::Borrowed("triangle"),
         "sine" => Cow::Borrowed("sine"),
@@ -293,26 +323,30 @@ fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
 impl OscillatorType {
     pub fn get_osc_node(&self) -> An<Unit<U1, U1>> {
         match self {
-            OscillatorType::Saw => unit::<U1, U1>(Box::new(poly_saw())),
-            OscillatorType::Triangle => unit::<U1, U1>(Box::new(triangle())),
-            OscillatorType::Sine => unit::<U1, U1>(Box::new(sine())),
-            OscillatorType::Pulse => unit::<U1, U1>(Box::new(poly_square())),
-            OscillatorType::Square => unit::<U1, U1>(Box::new(poly_square())),
-            OscillatorType::None => unit::<U1, U1>(Box::new(sine() * 0.0)),
-            _ => todo!(), // todo: load wavetable with path!
+            OscillatorType::Saw => to_mono_unit(Box::new(poly_saw())),
+            OscillatorType::Triangle => to_mono_unit(Box::new(triangle())),
+            OscillatorType::Sine => to_mono_unit(Box::new(sine())),
+            OscillatorType::Pulse => to_mono_unit(Box::new(poly_square())),
+            OscillatorType::Square => to_mono_unit(Box::new(poly_square())),
+            OscillatorType::None => to_mono_unit(Box::new(sine() * 0.0)),
+            OscillatorType::WaveTable(_) => todo!(),
         }
     }
     pub fn get_osc_node_pw(&self) -> An<Unit<U2, U1>> {
         // nullify the second value for osc that don't support pulse width
-        let sinker = (pass() | pass() * 0.0) >> join::<U2>();
+        let pw_sinker = (pass() | pass() * 0.0) >> join::<U2>();
         match self {
-            OscillatorType::Saw => unit::<U2, U1>(Box::new(sinker >> self.get_osc_node())),
-            OscillatorType::Triangle => unit::<U2, U1>(Box::new(sinker >> self.get_osc_node())),
-            OscillatorType::Sine => unit::<U2, U1>(Box::new(sinker >> self.get_osc_node())),
-            OscillatorType::Pulse => unit::<U2, U1>(Box::new(pulse())),
-            OscillatorType::Square => unit::<U2, U1>(Box::new(sinker >> self.get_osc_node())),
-            OscillatorType::None => unit::<U2, U1>(Box::new(sinker >> sine() * 0.0)),
-            _ => todo!(),
+            OscillatorType::Saw => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node())),
+            OscillatorType::Triangle => {
+                stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node()))
+            }
+            OscillatorType::Sine => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node())),
+            OscillatorType::Pulse => stereo_to_mono_unit(Box::new(pulse())),
+            OscillatorType::Square => {
+                stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node()))
+            }
+            OscillatorType::None => stereo_to_mono_unit(Box::new(pw_sinker >> sine() * 0.0)),
+            _ => panic!("Type cannot accept any inputs - therefore cannot force it to receive "),
         }
     }
 }

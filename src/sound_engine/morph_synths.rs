@@ -9,15 +9,16 @@ use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
 
+// todo: add cc frequency detune control for each operator
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let osc_1a = params.get_osc_node_type("osc_1a").unwrap().get_osc_node();
     let osc_1b = params.get_osc_node_type("osc_1b").unwrap().get_osc_node();
     let osc_2a = params.get_osc_node_type("osc_2a").unwrap().get_osc_node();
     let osc_2b = params.get_osc_node_type("osc_2b").unwrap().get_osc_node();
 
-    // goes from 1.0 to 50.0 with half steps / fixed float 0.0 to 100.0
+    // CC: goes from 0.0 to 100 in whole steps
     let fm_ratio_an =
-        params.cc_sound_or_default("fm_ratio", state) >> quantize_01_decimal() * constant(50.0);
+        params.cc_sound_or_default("fm_ratio", state) >> quantize_01_decimal() * constant(100.0);
     let fm_amount_1 = params.cc_sound_or_default("fm_amount_1", state) * constant(10.0);
     let fm_amount_2 = params.cc_sound_or_default("fm_amount_2", state) * constant(10.0);
 
@@ -86,14 +87,29 @@ static MORPH2: SoundFactory = SoundFactory {
                 description: None,
             },
         ])),
-        // todo: add the rest
-        non_cc_params: Some(Cow::Borrowed(&[NonCcParam {
-            value: ParamType::String(Cow::Borrowed("triangle")),
-            name: "osc1_a",
-            description: None,
-        }])),
+        non_cc_params: Some(Cow::Borrowed(&[
+            NonCcParam {
+                value: ParamType::Oscillator(Cow::Borrowed("triangle")),
+                name: "osc1_a",
+                description: None,
+            },
+            NonCcParam {
+                value: ParamType::Oscillator(Cow::Borrowed("square")),
+                name: "osc1_b",
+                description: None,
+            },
+            NonCcParam {
+                value: ParamType::Oscillator(Cow::Borrowed("sine")),
+                name: "osc2_a",
+                description: None,
+            },
+            NonCcParam {
+                value: ParamType::Oscillator(Cow::Borrowed("saw")),
+                name: "osc2_b",
+                description: None,
+            },
+        ])),
     },
 };
 
 //todo: add a general synth: pro6 style...2 oscillators with shapes cascading (saw, triangle, pulse) - detune control,
-// todo: this should be an engine with 2 oscillators with independent levels (pulse width modulation too?), detune and pitch shit of 1 octave up and down

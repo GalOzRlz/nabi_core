@@ -1,3 +1,3 @@
 mod instruments;
-pub mod morph2;
+pub mod morph_synths;
 pub mod sound_building;
