@@ -107,30 +107,25 @@ pub struct TomlPatchDef {
     pub function: String,
     pub name: String,
     pub tuning: Option<String>,
-    pub sound: Option<TomlSoundConfigSection>,
+    pub sound: Option<ConfigurableMappings>,
     pub effects: Option<TomlEffectSection>,
 }
 
 pub trait ConfigurableMapping {
-    fn get_config(&self) -> Option<&HashMap<String, Value>>;
+    fn get_values(&self) -> Option<&HashMap<String, Value>>;
     fn get_mapping(&self) -> Option<&HashMap<String, Value>>;
     fn get_mapping_mut(&mut self) -> Option<&mut HashMap<String, Value>>;
 }
 
 #[derive(Clone, Default, Deserialize)]
 pub struct ConfigurableMappings {
-    pub config: Option<HashMap<String, Value>>,
+    pub values: Option<HashMap<String, Value>>,
     pub mapping: Option<HashMap<String, Value>>,
 }
 
-#[derive(Deserialize, Clone)]
-pub struct TomlSoundConfigSection {
-    pub config_maps: ConfigurableMappings,
-}
-
 impl ConfigurableMapping for ConfigurableMappings {
-    fn get_config(&self) -> Option<&HashMap<String, Value>> {
-        self.config.as_ref()
+    fn get_values(&self) -> Option<&HashMap<String, Value>> {
+        self.values.as_ref()
     }
 
     fn get_mapping(&self) -> Option<&HashMap<String, Value>> {
@@ -146,7 +141,7 @@ impl ConfigurableMapping for ConfigurableMappings {
 pub struct TomlEffectSection {
     #[serde(flatten)]
     pub chain: Option<Vec<String>>,
-    pub config_maps: ConfigurableMappings,
+    pub configs: Option<HashMap<String, ConfigurableMappings>>,
 }
 
 #[derive(Deserialize)]

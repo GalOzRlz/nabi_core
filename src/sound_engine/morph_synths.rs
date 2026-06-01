@@ -11,10 +11,10 @@ use std::borrow::Cow;
 
 // todo: add cc frequency detune control for each operator
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
-    let osc_1a = params.get_osc_node_type("osc_1a").unwrap().get_osc_node();
-    let osc_1b = params.get_osc_node_type("osc_1b").unwrap().get_osc_node();
-    let osc_2a = params.get_osc_node_type("osc_2a").unwrap().get_osc_node();
-    let osc_2b = params.get_osc_node_type("osc_2b").unwrap().get_osc_node();
+    let osc_1a = params.get_osc_node_type("osc1_a").unwrap().get_osc_node();
+    let osc_1b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
+    let osc_2a = params.get_osc_node_type("osc2_a").unwrap().get_osc_node();
+    let osc_2b = params.get_osc_node_type("osc2_b").unwrap().get_osc_node();
 
     // CC: goes from 0.0 to 100 in whole steps
     let fm_ratio_an =
@@ -42,10 +42,13 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     }
     .build_operator(state);
 
-    let morph1 = (osc_1a * (constant(1.0) - b1_cc.clone()) & osc_1b * b1_cc.clone()) * 2.0;
-    let morph2 = (osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc) * 2.0;
+    let morph1 = (state.bent_pitch() >> osc_1a * (constant(1.0) - b1_cc.clone())
+        & osc_1b * b1_cc.clone())
+        * 2.0;
+    let morph2 =
+        (state.bent_pitch() >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc) * 2.0;
     let synth = Box::new(morph1 + morph2);
-    state.assemble_unpitched_sound(synth, state.boxed_adsr())
+    state.assemble_pitched_sound(synth)
 }
 
 #[distributed_slice(SOUNDS)]
@@ -106,6 +109,11 @@ static MORPH2: SoundFactory = SoundFactory {
             NonCcParam {
                 value: ParamType::Oscillator(Cow::Borrowed("saw")),
                 name: "osc2_b",
+                description: None,
+            },
+            NonCcParam {
+                value: ParamType::ADSR([0.3, 0.1, 0.75, 0.35]),
+                name: "adsr",
                 description: None,
             },
         ])),

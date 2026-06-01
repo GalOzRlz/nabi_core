@@ -54,7 +54,6 @@ impl CcInit for FxChainFactory {
                 }
             }
         }
-        println!("initial fx cc array: {:?}", final_cc_array);
         final_cc_array
     }
 }
@@ -86,7 +85,6 @@ impl FxChainFactory {
 
     /// Builds and connects the nets of the existing chain
     pub fn build_chain(&mut self, shared_midi_state: &SharedMidiState) -> Net {
-        println!("initial cc: {:?}", self.get_initial_cc());
         let arc_vec: Arc<Vec<Net>> =
             Arc::new(self.chain.iter().map(|fx| fx(shared_midi_state)).collect());
         self.connect_node_vec(arc_vec)
@@ -112,7 +110,11 @@ impl FxChainFactory {
             for fx_name in fx_chain.iter() {
                 let entry = get_effect_from_registry(fx_name, &registry);
                 let mut params = entry.params.clone();
-                params.apply_toml_overrides(&effects_toml_config.config_maps);
+                if let Some(configs) = &effects_toml_config.configs {
+                    if let Some(toml_params) = configs.get(fx_name) {
+                        params.apply_toml_overrides(toml_params);
+                    }
+                }
                 let runtime_arc = Arc::new(params);
                 let closure = (entry.factory)(runtime_arc.clone());
                 chain.push(closure);

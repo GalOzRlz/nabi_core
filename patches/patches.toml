@@ -4,14 +4,14 @@ name = "morph2 A"
 tuning = "just intonation"
 [program.effects]
 chain = ["eq2", "reverb"]
-[program.effects.reverb.cofig]
+[program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
 room_size = 8.8
 damping   = 0.5
 length    = 4.2
 # CC‑mappable parameter: wet_amount
 wet_amount = 0.9
-[program.effects.eq2]
+[program.effects.configs.eq2.values]
 lowcut = 0.0
 highcut = 1.0
 
@@ -20,11 +20,11 @@ function = "morph2"
 name = "morph2 B"
 [program.effects]
 chain = ["reverb"]
-[program.effects.reverb.config]
+[program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
 room_size = 3.8
 damping   = 0.5
 length    = 4.2
 wet_amount = 0.3
-[program.effects.reverb.mapping]
+[program.effects.configs.reverb.mapping]
 wet_amount = 2

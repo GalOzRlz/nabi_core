@@ -28,3 +28,11 @@ serde = { version = "1", features = ["derive"] }
 toml = "1.1.2"
 oximedia-effects = "0.1.7"
 linkme = "0.3.36"
+
+[profile.dev]
+debug = true
+opt-level = 0
+
+[profile.test]
+debug = true
+opt-level = 0

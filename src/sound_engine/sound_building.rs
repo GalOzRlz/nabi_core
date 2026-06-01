@@ -1,6 +1,6 @@
 use crate::SharedMidiState;
 use crate::common::params::{CcInit, Parameterized};
-use crate::config_builder::{MAX_KNOBS_PER_GROUP, TomlSoundConfigSection};
+use crate::config_builder::{ConfigurableMappings, MAX_KNOBS_PER_GROUP};
 use fundsp::audiounit::AudioUnit;
 use linkme::distributed_slice;
 use std::collections::HashMap;
@@ -40,12 +40,12 @@ impl CcInit for SoundFactory {
 }
 
 impl SoundFactory {
-    pub fn process_config(&mut self, config: Option<&TomlSoundConfigSection>) {
+    pub fn process_config(&mut self, config: Option<&ConfigurableMappings>) {
         let Some(sound_toml_config) = config else {
             return;
         };
         let mut new_params = self.params.clone();
-        new_params.apply_toml_overrides(&sound_toml_config.config_maps);
+        new_params.apply_toml_overrides(sound_toml_config);
         self.params = new_params;
     }
 

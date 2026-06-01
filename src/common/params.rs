@@ -50,6 +50,13 @@ pub enum ParamType {
 }
 
 impl ParamType {
+    pub fn as_array(&self) -> anyhow::Result<[f32; 4]> {
+        match &self {
+            ParamType::ADSR(a) => Ok(*a),
+            _ => Err(anyhow!("cannot convert param to array")),
+        }
+    }
+
     pub fn as_zero_to_one_f32(&self) -> Result<f32, anyhow::Error> {
         match &self {
             ParamType::U8(v) => Ok(quantize_u8_to_01(*v)),
@@ -132,7 +139,7 @@ impl Parameterized {
     where
         T: ConfigurableMapping,
     {
-        if let Some(cfg) = toml_config.get_config() {
+        if let Some(cfg) = toml_config.get_values() {
             if let Some(mut_cc_params) = self.cc_params.as_mut() {
                 apply_toml_values_overrides(mut_cc_params.to_mut(), &cfg);
             }
@@ -143,6 +150,15 @@ impl Parameterized {
         if let Some(user_mappings) = toml_config.get_mapping() {
             apply_toml_mapping(self, user_mappings);
         }
+    }
+    pub fn config_state_with_param_adsr(
+        &mut self,
+        adsr_param_name: &str,
+        state: &mut SharedMidiState,
+    ) {
+        if let Ok(adsr_def) = self.get_non_cc_param(adsr_param_name) {
+            state.config_adsr_from_array(&adsr_def.value.as_array().expect("invalid adsr param"));
+        };
     }
 
     pub fn get_cc_param(&self, name: &str) -> anyhow::Result<&CcParam> {
@@ -167,7 +183,7 @@ impl Parameterized {
     pub fn get_non_cc_param(&self, name: &str) -> anyhow::Result<&NonCcParam> {
         if let Some(vec) = &self.non_cc_params {
             for i in vec.iter() {
-                if i.name == name {
+                if i.name.to_lowercase() == name.to_lowercase() {
                     return Ok(i);
                 }
             }

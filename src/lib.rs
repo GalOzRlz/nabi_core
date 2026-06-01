@@ -124,6 +124,11 @@ impl SharedMidiState {
         s
     }
 
+    /// Change the ADSR of the voice from an array representation
+    pub fn config_adsr_from_array(&mut self, array: &[f32; 4]) {
+        self.adsr.configure(array[0], array[1], array[2], array[3]);
+    }
+
     /// Returns n ADSR filter in a `Box`.
     pub fn boxed_adsr(&self) -> Box<dyn AudioUnit> {
         let control = self.control_var();
@@ -193,27 +198,16 @@ impl SharedMidiState {
 
     /// Pipes the current `bent_pitch()` into `synth`, then multiplies by `volume(adjuster)` to
     /// produce the final sound.
-    pub fn assemble_unpitched_sound(
-        &self,
-        synth: Box<dyn AudioUnit>,
-        adjuster: Box<dyn AudioUnit>,
-    ) -> Box<dyn AudioUnit> {
-        self.assemble_pitched_sound(
-            Box::new(Net::pipe(self.bent_pitch(), Net::wrap(synth))),
-            adjuster,
-        )
+    pub fn assemble_unpitched_sound(&self, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {
+        self.assemble_pitched_sound(Box::new(Net::pipe(self.bent_pitch(), Net::wrap(synth))))
     }
 
     /// Assumes that the current `bent_pitch()` value has already been incorporated into `pitched_sound`.
     /// It then multiplies by `volume(adjuster)` to produce the final sound.
-    pub fn assemble_pitched_sound(
-        &self,
-        pitched_sound: Box<dyn AudioUnit>,
-        adjuster: Box<dyn AudioUnit>,
-    ) -> Box<dyn AudioUnit> {
+    pub fn assemble_pitched_sound(&self, pitched_sound: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {
         Box::new(Net::binary(
             Net::wrap(pitched_sound),
-            self.volume(adjuster),
+            self.volume(self.boxed_adsr()),
             FrameMul::new(),
         ))
     }

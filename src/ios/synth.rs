@@ -250,20 +250,15 @@ struct VoiceManager<const N: usize> {
 
 impl<const N: usize> VoiceManager<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
-        let mut cc_to_logical_num = HashMap::new();
-        for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Sound, i));
-        }
-        for (i, &cc) in config.fx_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Effect, i));
-        }
+        let cc_to_logical_num = Self::get_cc_map(&config);
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build_synth();
         let fx_cc_array = &first_table.effects.get_initial_cc();
         let sound_cc_array = &first_table.sound_factory.get_initial_cc();
         let tuner = first_table.tuning;
         let mut master_fx_net = Net::new(2, 2);
-
+        println!("sound cc array: {:?}", sound_cc_array);
+        println!("fx cc array: {:?}", fx_cc_array);
         let states = [(); N].map(|_| {
             SharedMidiState::new(
                 &config.sound_cc_mapping,
@@ -292,6 +287,41 @@ impl<const N: usize> VoiceManager<N> {
             mix_net: Net::new(2, 2),
             sound_node_id: NodeId::new(),
         }
+    }
+
+    fn rebuild_and_replace_sound(&mut self) {
+        let new_synth = self.patch_table.entries[self.current_patch_num]
+            .sound_factory
+            .build_synth();
+        self.synth_func = new_synth;
+        let new_sound_net = self.sound();
+        self.mix_net.crossfade(
+            self.sound_node_id,
+            Fade::Smooth,
+            0.01,
+            Box::new(new_sound_net),
+        );
+    }
+    fn rebuild_and_replace_fx_chain(&mut self) {
+        let entry = &self.patch_table.entries[self.current_patch_num].effects;
+        let new_fx_net = entry.clone().build_chain(&self.states[0]);
+        self.mix_net
+            .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
+    }
+
+    fn commit_patch_changes(&mut self) {
+        self.mix_net.commit()
+    }
+    fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
+        let mut cc_to_logical_num = HashMap::new();
+        for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
+            cc_to_logical_num.insert(cc, (KnobGroup::Sound, i));
+        }
+        for (i, &cc) in config.fx_cc_mapping.iter().enumerate() {
+            cc_to_logical_num.insert(cc, (KnobGroup::Effect, i));
+        }
+        println!("{:?}", cc_to_logical_num);
+        cc_to_logical_num
     }
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         for i in 0..self.states.len() {
@@ -500,17 +530,9 @@ impl<const N: usize> VoiceManager<N> {
             let tuner = entry.tuning.clone();
             self.set_midi_to_hz(tuner);
             self.current_patch_num = program;
-            let new_sound_net = self.sound();
-            let new_fx_net = entry.effects.clone().build_chain(&self.states[0]);
-            self.mix_net // todo: make fade time for effects configurable?
-                .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
-            self.mix_net.crossfade(
-                self.sound_node_id,
-                Fade::Smooth,
-                0.01,
-                Box::new(new_sound_net),
-            );
-            self.mix_net.commit();
+            self.rebuild_and_replace_fx_chain();
+            self.rebuild_and_replace_sound();
+            self.commit_patch_changes();
             self.apply_init_cc_vals();
         }
     }
