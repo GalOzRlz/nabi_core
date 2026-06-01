@@ -21,7 +21,6 @@ pub mod experimental;
 mod helpers;
 pub mod ios;
 pub mod patch_builder;
-mod patch_helpers;
 mod sound_engine;
 pub mod tui;
 pub mod tunings;
@@ -29,12 +28,11 @@ pub mod tunings;
 use crate::common::params::{CcAudioNode, CcParam};
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use crate::helpers::cc::cc_smooth;
-use crate::patch_helpers::Adsr;
 use crate::tunings::TunerBuilder;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
-use fundsp::prelude64::{adsr_live, shared, var};
+use fundsp::prelude64::{shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::MidiMsg;
 use std::fmt::Debug;
@@ -69,7 +67,6 @@ pub struct SharedMidiState {
     fx_cc_vals: [Shared; MAX_KNOBS_PER_GROUP],
     sound_cc_count: usize,
     effect_cc_count: usize,
-    adsr: Adsr,
 }
 
 impl Default for SharedMidiState {
@@ -84,7 +81,6 @@ impl Default for SharedMidiState {
             fx_cc_vals: core::array::from_fn(|_| Shared::new(0.0)),
             sound_cc_count: 0,
             effect_cc_count: 0,
-            adsr: Default::default(),
         }
     }
 }
@@ -124,24 +120,6 @@ impl SharedMidiState {
         s
     }
 
-    /// Change the ADSR of the voice from an array representation
-    pub fn config_adsr_from_array(&mut self, array: &[f32; 4]) {
-        self.adsr.configure(array[0], array[1], array[2], array[3]);
-    }
-
-    /// Returns n ADSR filter in a `Box`.
-    pub fn boxed_adsr(&self) -> Box<dyn AudioUnit> {
-        let control = self.control_var();
-        Box::new(
-            control
-                >> adsr_live(
-                    self.adsr.attack.value(),
-                    self.adsr.decay.value(),
-                    self.adsr.sustain.value(),
-                    self.adsr.release.value(),
-                ),
-        )
-    }
     fn sound_cc(&self, idx: usize) -> Option<An<Var>> {
         if idx < 1 || idx > self.sound_cc_count {
             return None;
@@ -198,16 +176,27 @@ impl SharedMidiState {
 
     /// Pipes the current `bent_pitch()` into `synth`, then multiplies by `volume(adjuster)` to
     /// produce the final sound.
-    pub fn assemble_unpitched_sound(&self, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {
-        self.assemble_pitched_sound(Box::new(Net::pipe(self.bent_pitch(), Net::wrap(synth))))
+    pub fn assemble_unpitched_sound(
+        &self,
+        synth: Box<dyn AudioUnit>,
+        adjuster: Box<dyn AudioUnit>,
+    ) -> Box<dyn AudioUnit> {
+        self.assemble_pitched_sound(
+            Box::new(Net::pipe(self.bent_pitch(), Net::wrap(synth))),
+            adjuster,
+        )
     }
 
     /// Assumes that the current `bent_pitch()` value has already been incorporated into `pitched_sound`.
     /// It then multiplies by `volume(adjuster)` to produce the final sound.
-    pub fn assemble_pitched_sound(&self, pitched_sound: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {
+    pub fn assemble_pitched_sound(
+        &self,
+        pitched_sound: Box<dyn AudioUnit>,
+        adjuster: Box<dyn AudioUnit>,
+    ) -> Box<dyn AudioUnit> {
         Box::new(Net::binary(
             Net::wrap(pitched_sound),
-            self.volume(self.boxed_adsr()),
+            self.volume(adjuster),
             FrameMul::new(),
         ))
     }

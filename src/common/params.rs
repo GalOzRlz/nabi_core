@@ -6,8 +6,8 @@ use anyhow::anyhow;
 use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
 use fundsp::prelude64::{
-    An, AudioUnit, Net, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, join, pass, poly_saw,
-    poly_square, pulse, sine, triangle, unit,
+    An, AudioUnit, Net, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, join, pass,
+    poly_saw, poly_square, pulse, sine, triangle, unit,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -151,14 +151,25 @@ impl Parameterized {
             apply_toml_mapping(self, user_mappings);
         }
     }
-    pub fn config_state_with_param_adsr(
-        &mut self,
-        adsr_param_name: &str,
-        state: &mut SharedMidiState,
-    ) {
-        if let Ok(adsr_def) = self.get_non_cc_param(adsr_param_name) {
-            state.config_adsr_from_array(&adsr_def.value.as_array().expect("invalid adsr param"));
-        };
+
+    /// Returns an ADSR envelope in a `Box` based on internal parameters.
+    pub fn boxed_adsr(&self, param_name: &str, state: &SharedMidiState) -> Box<dyn AudioUnit> {
+        let control = state.control_var();
+        if let Ok(param) = self.get_non_cc_param(param_name) {
+            Box::new(
+                // todo: make into a generic struct that returns boxed audiounit
+                control
+                    >> adsr_live(
+                        param.value.as_array().unwrap()[0],
+                        param.value.as_array().unwrap()[1],
+                        param.value.as_array().unwrap()[2],
+                        param.value.as_array().unwrap()[3],
+                    ),
+            )
+        } else {
+            // default:
+            Box::new(control >> adsr_live(0.1, 0.0, 1.0, 0.3))
+        }
     }
 
     pub fn get_cc_param(&self, name: &str) -> anyhow::Result<&CcParam> {
@@ -199,6 +210,7 @@ impl Parameterized {
             .as_oscillator_type()
             .map_err(|e| anyhow::anyhow!(e))
     }
+
     pub fn get_noise_node_type(&self, name: &str) -> anyhow::Result<NoiseType> {
         todo!()
     }

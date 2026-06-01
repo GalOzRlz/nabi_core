@@ -9,7 +9,7 @@ use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
 
-// todo: add cc frequency detune control for each operator
+// todo: add cc frequency detune control for each operator (+12/-12)
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let osc_1a = params.get_osc_node_type("osc1_a").unwrap().get_osc_node();
     let osc_1b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
@@ -48,7 +48,7 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let morph2 =
         (state.bent_pitch() >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc) * 2.0;
     let synth = Box::new(morph1 + morph2);
-    state.assemble_pitched_sound(synth)
+    state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
 }
 
 #[distributed_slice(SOUNDS)]
