@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
         let patch_table = Arc::new(
             // todo: make the function search for all in patches/*.toml
-            create_ordered_patch_table(&["patches/patches.toml"], &"order.toml", &global_config),
+            create_ordered_patch_table(&["patches/patches.toml"], &"order.toml"),
         );
         start_output_thread::<10>(
             midi_msgs.clone(),

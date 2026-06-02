@@ -1,37 +1,34 @@
-#[[program]]
-#function = "chorused_dirty_guitar"
-#name = "chorused dirty guitar"
-#
-#[[program]]
-#function = "plastic_pipe"
-#name = "plastic pipe"
 [[program]]
-function = "Square_saw_soft"
-name = "soft square+saw"
+function = "morph2"
+name = "morph2 A"
 tuning = "just intonation"
+[program.sound.configs.values]
+osc1_a = "sine"
+osc2_a = "square"
 [program.effects]
-chain = ["eq2", "reverb"]
-[program.effects.reverb]
+chain = ["reverb"]
+[program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
-room_size = 8.8
+room_size = 6.0
 damping   = 0.5
-length    = 4.2
+length    = 2.2
 # CC‑mappable parameter: wet_amount
-wet_amount = 0.9
-[program.effects.eq2]
+wet_amount = 0.5
+[program.effects.configs.eq2.values]
 lowcut = 0.0
 highcut = 1.0
 
-
 [[program]]
-function = "Square_saw_soft"
-name = "soft square+saw2"
-tuning = "just intonation"
+function = "morph2"
+name = "morph2 B"
+[program.s]
 [program.effects]
 chain = ["reverb"]
-[program.effects.reverb]
+[program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
-room_size = 8.8
+room_size = 3.8
 damping   = 0.5
 length    = 4.2
 wet_amount = 0.3
+[program.effects.configs.reverb.mapping]
+wet_amount = 2

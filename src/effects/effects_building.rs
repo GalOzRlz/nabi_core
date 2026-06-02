@@ -1,178 +1,132 @@
 use crate::SharedMidiState;
-use crate::common_definitions::params::ParamInfo;
-use crate::config_builder::TomlEffectSection;
+use crate::common::params::{CcInit, Parameterized};
+use crate::config_builder::{MAX_KNOBS_PER_GROUP, TomlEffectSection};
 use crate::effects::helpers::to_stereo;
-use crate::patch_builder::{KnobGroup, KnobLabel};
 use fundsp::prelude64::{Net, NodeId};
+use linkme::distributed_slice;
 use std::collections::HashMap;
 use std::sync::Arc;
-use toml::Table;
 
-#[macro_export]
-macro_rules! register_effect {
-    (
-        name: $name:expr,
-        params: $params_type:ty,
-        factory: $factory_fn:ident,
-        cc_params: [ $( ($cc_name:expr, $cc_default_knob:expr) ),* $(,)? ]
-    ) => {
-        inventory::submit! {
-            EffectDef {
-                name: $name,
-                factory: (|config: &toml::Table,
-                           cc_map: &std::collections::HashMap<String, usize>|
-                 -> EffectFunc {
-                    let params = <$params_type as Parameterized>::from_table(config);
-                    $factory_fn(&params, cc_map)
-                }) as fn(
-                    &toml::Table,
-                    &std::collections::HashMap<String, usize>,
-                ) -> EffectFunc,
-                // Store the function pointer, not the result
-                param_info: <$params_type as Parameterized>::param_info as fn() -> &'static [ParamInfo],
-                cc_params: &[ $( ($cc_name, $cc_default_knob) ),* ],
-            }
-        }
-    };
-}
+#[distributed_slice]
+pub static EFFECTS: [EffectDef] = [..];
 
 pub type EffectFunc = Box<dyn Fn(&SharedMidiState) -> Net + Send + Sync + 'static>;
 
-pub type EffectFactory = fn(construction: &Table, knob_map: &HashMap<String, usize>) -> EffectFunc;
+pub type EffectFactory = fn(Arc<Parameterized>) -> EffectFunc;
 
-pub struct EffectDef {
-    pub name: &'static str,
-    pub factory: EffectFactory,
-    /// Returns parameter metadata when called.
-    pub param_info: fn() -> &'static [ParamInfo],
-    pub cc_params: &'static [(&'static str, usize)],
+type EffectsRegistry = HashMap<&'static str, &'static EffectDef>;
+pub fn get_effects_registry() -> EffectsRegistry {
+    let registry: EffectsRegistry = EFFECTS.iter().map(|e| (e.params.name, e)).collect();
+    registry
 }
 
-inventory::collect!(EffectDef);
+pub fn get_effect_from_registry(fx_name: &str, registry: &EffectsRegistry) -> &'static EffectDef {
+    registry
+        .get(fx_name)
+        .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name))
+}
+
+#[derive(Clone)]
+pub struct EffectDef {
+    pub factory: EffectFactory,
+    pub params: Parameterized,
+}
 
 #[derive(Clone)]
 pub struct FxChainFactory {
     pub chain: Arc<Vec<EffectFunc>>,
-    pub initial_cc: Vec<f32>,
-    pub knob_labels: Vec<KnobLabel>,
     pub node_ids: Option<Vec<NodeId>>,
+    pub definitions: Option<Vec<Arc<Parameterized>>>,
+    pub fx_names: Option<Vec<String>>,
+}
+
+impl CcInit for FxChainFactory {
+    fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP] {
+        let mut final_cc_array = [0_f32; MAX_KNOBS_PER_GROUP];
+        if let Some(definitions) = &self.definitions {
+            //println!("start get definitions {:?}", definitions);
+            let mut cc_summation = Vec::with_capacity(definitions.len());
+            for def in definitions {
+                cc_summation.push(def.get_initial_cc());
+            }
+            for param in cc_summation.iter() {
+                for (idx, val) in param.iter().filter(|x| **x != 0.0).enumerate() {
+                    final_cc_array[idx] = *val;
+                }
+            }
+        }
+        final_cc_array
+    }
 }
 
 impl FxChainFactory {
     pub fn connect_node_vec(&mut self, node_vec: Arc<Vec<Net>>) -> Net {
         let mut nodeid_vec: Vec<NodeId> = Vec::with_capacity(node_vec.len());
-        let nodes = (*node_vec).clone();
         let mut net = Net::new(2, 2);
-        for node in nodes {
-            let id = net.chain(Box::new(to_stereo(node)));
+        for node in node_vec.iter() {
+            let id = net.chain(Box::new(to_stereo(node.clone())));
             nodeid_vec.push(id)
         }
         self.node_ids = Some(nodeid_vec);
         net
     }
+    /// Rebuilds the chain and connects its Net based off of the struct definitions
+    pub fn reassembled_chain(&mut self, shared_midi_state: &SharedMidiState) -> Net {
+        let registry = get_effects_registry();
+        let mut chain = Vec::new();
+        for (idx, effect) in self.fx_names.as_ref().unwrap().iter().enumerate() {
+            let params_arc = self.definitions.as_ref().unwrap()[idx].clone();
+            let factory = get_effect_from_registry(effect, &registry).factory;
+            let closure = (factory)(params_arc);
+            chain.push(closure);
+        }
+        self.chain = Arc::new(chain);
+        self.build_chain(shared_midi_state)
+    }
 
-    pub fn build(&mut self, shared_midi_state: &SharedMidiState) -> Net {
-        println!("knob lables: {:?}", self.knob_labels);
-        println!("initial cc: {:?}", self.initial_cc);
+    /// Builds and connects the nets of the existing chain
+    pub fn build_chain(&mut self, shared_midi_state: &SharedMidiState) -> Net {
         let arc_vec: Arc<Vec<Net>> =
             Arc::new(self.chain.iter().map(|fx| fx(shared_midi_state)).collect());
         self.connect_node_vec(arc_vec)
     }
-    pub fn new(
-        effects_config: Option<&TomlEffectSection>,
-        effect_cc_count: usize, // from GlobalConfig.fx_cc_mapping.len()
-    ) -> Self {
-        // Build the effect registry once
-        let registry: HashMap<&str, &EffectDef> = inventory::iter::<EffectDef>()
-            .map(|e| (e.name, e))
-            .collect();
-        let mut knob_labels = Vec::with_capacity(effect_cc_count);
-        // If there are no effects, return an empty chain
-        let Some(effects) = effects_config else {
-            return FxChainFactory {
-                chain: Arc::new(Vec::new()),
-                initial_cc: vec![0.0; effect_cc_count.max(1)],
-                knob_labels: Vec::new(),
-                node_ids: None,
-            };
-        };
-        let mut initial_knobs = vec![0.0_f32; effect_cc_count.max(1)];
-        let mut chain = Vec::new();
-
-        for fx_name in &effects.chain {
-            let def = registry
-                .get(fx_name.as_str())
-                .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name));
-
-            // ---- Construction values (raw TOML table, exactly what the factory expects) ----
-            let mut construction = Table::new();
-            if let Some(eff_cfg) = effects
-                .extras
-                .get(fx_name.as_str())
-                .and_then(|v| v.as_table())
-            {
-                for (k, v) in eff_cfg {
-                    if k != "mapping" {
-                        construction.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-
-            // ---- CC parameter mappings ----
-            let mut knob_map = HashMap::new();
-            let user_mappings: Option<&Table> = effects
-                .extras
-                .get(fx_name.as_str())
-                .and_then(|v| v.get("mapping"))
-                .and_then(|v| v.as_table());
-
-            // def.cc_params is now &[(name, default_knob)] – no default value
-            for (fx_name, default_knob) in def.cc_params.iter() {
-                let mut knob = *default_knob;
-
-                // User override?
-                if let Some(m) = user_mappings {
-                    if let Some(val) = m.get(*fx_name).and_then(|v| v.as_integer()) {
-                        knob = val as usize;
-                    }
-                }
-                // Clamp
-                if knob < 1 {
-                    knob = 1;
-                }
-                if knob > effect_cc_count {
-                    knob = effect_cc_count;
-                }
-
-                knob_map.insert(fx_name.to_string(), knob);
-
-                knob_labels.push(KnobLabel {
-                    group: KnobGroup::Effect,
-                    index: knob,
-                    label: format!("{}: {}", fx_name, fx_name),
-                });
-            }
-            println!("knob map: {:?}", knob_map);
-            for (param_name, value) in construction.iter() {
-                for (name, index) in knob_map.iter() {
-                    if name == param_name {
-                        println!("cc knob {:?} - will get value {:?}", index, *value);
-                        initial_knobs[index - 1] = value
-                            .as_float()
-                            .expect("illegal value for initialization param!")
-                            as f32;
-                    }
-                }
-            }
-            // The factory converts `construction` into the proper struct internally
-            let closure = (def.factory)(&construction, &knob_map);
-            chain.push(closure);
-        }
+    pub fn new() -> Self {
         FxChainFactory {
-            chain: Arc::new(chain),
-            initial_cc: initial_knobs,
-            knob_labels,
+            chain: Arc::new(Vec::new()),
             node_ids: None,
+            fx_names: None,
+            definitions: None,
         }
+    }
+
+    pub fn process_config(&mut self, config: Option<&TomlEffectSection>) {
+        let registry = get_effects_registry();
+        let Some(effects_toml_config) = config else {
+            return;
+        };
+        let mut definitions = Vec::new();
+        let mut fx_names = Vec::new();
+        let mut chain = Vec::new();
+        if let Some(fx_chain) = &effects_toml_config.chain {
+            for fx_name in fx_chain.iter() {
+                let entry = get_effect_from_registry(fx_name, &registry);
+                let mut params = entry.params.clone();
+                if let Some(configs) = &effects_toml_config.configs {
+                    if let Some(toml_params) = configs.get(fx_name) {
+                        params.apply_toml_overrides(toml_params);
+                    }
+                }
+                //println!("fx run time params: {:?}", params);
+                let runtime_arc = Arc::new(params);
+                let closure = (entry.factory)(runtime_arc.clone());
+                chain.push(closure);
+                fx_names.push(fx_name.to_string());
+                definitions.push(runtime_arc);
+            }
+        }
+        self.chain = Arc::new(chain);
+        self.node_ids = None;
+        self.fx_names = Some(fx_names);
+        self.definitions = Some(definitions);
     }
 }

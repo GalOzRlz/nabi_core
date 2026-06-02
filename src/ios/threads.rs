@@ -107,7 +107,6 @@ pub fn start_output_thread<const N: usize>(
     config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
-    println!("{:?}", cnf);
     std::thread::spawn(move || {
         let mut player = SynthPlayer::<N>::new(patch_table, cnf);
         player.run_output(midi_msgs).unwrap();

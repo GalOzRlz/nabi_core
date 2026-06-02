@@ -1,4 +1,4 @@
-use crate::sound_engine::params::Polarity;
+use crate::common::params::{ParamType, Polarity};
 use fundsp::prelude64::*;
 use std::cmp::max;
 
@@ -37,7 +37,7 @@ pub struct CombPluck {
 }
 
 impl CombPluck {
-    /// Create a new plucked string synthesizer based on damping low pass filter and resonant comb filter.
+    /// Create a new plucked string based on damping low pass filter and resonant comb filter (Karplus-Strong variant).
     ///Inputs
     /// # Parameters
     /// - `feedback`: Decay per sample (0.0 to 1.0). Higher = longer sustain.
@@ -241,17 +241,12 @@ fn pluck_generic(
     ))
 }
 
-pub fn pluck_comb_string() -> An<CombPluck> {
-    pluck_generic(0.995, 0.1, 0.5, 0.01, Polarity::Positive)
-}
-
-pub fn hit_comb_pipe() -> An<CombPluck> {
-    pluck_generic(0.995, 0.1, 0.7, 0.25, Polarity::Negative)
-}
-
-pub fn dirty_guitar() -> fn(Net, An<Var>) -> Net {
-    let mix = move |pitch: Net, gate: An<Var>| {
-        (pitch | gate.clone() | constant(0.0)) >> pluck_comb_string() >> lowpass_hz(9000.0, 0.5)
-    };
-    mix
+pub fn pluck_comb_string(polarity: Polarity, damping: ParamType) -> An<CombPluck> {
+    pluck_generic(
+        0.995,
+        0.1,
+        0.5,
+        damping.as_zero_to_one_f32().unwrap(),
+        polarity,
+    )
 }

@@ -2,11 +2,11 @@ use fundsp::prelude64::*;
 use oximedia_effects::stereo_widener::{StereoWidener, WidenerMode};
 
 #[derive(Clone)]
-pub struct OxiStereoWidenerNode {
+pub struct OxiStereoWidener {
     inner: StereoWidener,
 }
 
-impl OxiStereoWidenerNode {
+impl OxiStereoWidener {
     pub fn new(width: f32, mode: WidenerMode) -> Self {
         Self {
             inner: StereoWidener::new(mode, width),
@@ -21,7 +21,7 @@ impl OxiStereoWidenerNode {
 }
 
 // This is where we implement the FunDSP magic to make our struct a true AudioNode.
-impl AudioNode for OxiStereoWidenerNode {
+impl AudioNode for OxiStereoWidener {
     const ID: u64 = 42467;
     type Inputs = U3; // Takes stereo input  + width variable
     type Outputs = U2; // Produces stereo output
@@ -38,6 +38,6 @@ impl AudioNode for OxiStereoWidenerNode {
     }
 }
 
-fn stereo_widener(width: f32, mode: WidenerMode) -> An<OxiStereoWidenerNode> {
-    An(OxiStereoWidenerNode::new(width, mode))
+fn stereo_widener(width: f32, mode: WidenerMode) -> An<OxiStereoWidener> {
+    An(OxiStereoWidener::new(width, mode))
 }
