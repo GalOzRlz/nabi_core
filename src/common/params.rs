@@ -17,6 +17,7 @@ use std::sync::Arc;
 use toml::Value;
 
 pub type CcAudioNode = An<Pipe<Var, Follow<f64>>>;
+pub type CcArray = [f32; MAX_KNOBS_PER_GROUP];
 
 impl ToNet for CcAudioNode {
     fn to_net(self) -> Net {
@@ -28,7 +29,7 @@ pub trait ToNet {
     fn to_net(self) -> Net;
 }
 pub trait CcInit {
-    fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP];
+    fn get_initial_cc(&self) -> CcArray;
 }
 
 fn to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U1, U1>> {
@@ -63,7 +64,7 @@ impl ParamType {
             ParamType::Oscillator(_) => Err(anyhow!("ParamType::Oscillator has no numeric value!")),
             ParamType::ADSR(_) => Err(anyhow!("ParamType::ADSR has no numeric value!")),
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
-            ParamType::ZeroHundredFloat(v) => Ok((*v / 100.0).clamp(0.0, 1.0)),
+            ParamType::ZeroHundredFloat(v) => Ok((*v / 100.0).clamp(0.0, 1.0)), // scale to 0.0-1.0
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
         }
     }
@@ -115,7 +116,7 @@ pub struct NonCcParam {
     pub description: Option<&'static str>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Parameterized {
     pub name: &'static str,
     pub cc_params: Option<Cow<'static, [CcParam]>>,
@@ -127,9 +128,13 @@ impl CcInit for Parameterized {
         let mut cc_array = [0_f32; MAX_KNOBS_PER_GROUP];
         if let Some(cc_params_cow) = &self.cc_params {
             for cc_param in cc_params_cow.iter() {
-                cc_array[cc_param.cc_index] = cc_param.value.as_zero_to_one_f32().unwrap()
+                //println!("param: {} with index: {}", cc_param.name, cc_param.cc_index);
+                if cc_param.cc_index >= 1 {
+                    cc_array[cc_param.cc_index - 1] = cc_param.value.as_zero_to_one_f32().unwrap()
+                }
             }
         }
+        //        println!("name: {} with index: {:?}", self.name, cc_array);
         cc_array
     }
 }
@@ -181,6 +186,25 @@ impl Parameterized {
             }
         }
         Err(anyhow!(format!("CC-Parameter {} not found", name)))
+    }
+
+    pub fn to_config_values(&self) -> HashMap<String, Value> {
+        let mut new_map: HashMap<String, Value> = HashMap::new();
+        if let Some(params) = self.cc_params.as_ref() {
+            for def in params.iter() {
+                new_map.insert(
+                    def.name.to_string(),
+                    Value::Float(def.value.as_f32().unwrap() as f64),
+                );
+            }
+        };
+        new_map
+    }
+    pub fn apply_cc_state(&self, cc_array: &CcArray) {
+        todo!()
+    }
+    pub fn set_cc_param(&mut self, name: &str, value: f32) {
+        todo!()
     }
 
     pub fn cc_sound_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {

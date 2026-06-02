@@ -1,6 +1,6 @@
 use crate::SharedMidiState;
-use crate::common::params::{CcInit, Parameterized};
-use crate::config_builder::{ConfigurableMappings, MAX_KNOBS_PER_GROUP};
+use crate::common::params::{CcArray, CcInit, Parameterized};
+use crate::config_builder::ConfigurableMappings;
 use fundsp::audiounit::AudioUnit;
 use linkme::distributed_slice;
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ pub struct SoundFactory {
 pub type SynthFunc = Arc<dyn Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync>;
 
 impl CcInit for SoundFactory {
-    fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP] {
+    fn get_initial_cc(&self) -> CcArray {
         self.params.get_initial_cc()
     }
 }

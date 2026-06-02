@@ -2,15 +2,18 @@
 function = "morph2"
 name = "morph2 A"
 tuning = "just intonation"
+[program.sound.configs.values]
+osc1_a = "sine"
+osc2_a = "square"
 [program.effects]
-chain = ["eq2", "reverb"]
+chain = ["reverb"]
 [program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
-room_size = 8.8
+room_size = 6.0
 damping   = 0.5
-length    = 4.2
+length    = 2.2
 # CC‑mappable parameter: wet_amount
-wet_amount = 0.9
+wet_amount = 0.5
 [program.effects.configs.eq2.values]
 lowcut = 0.0
 highcut = 1.0
@@ -18,6 +21,7 @@ highcut = 1.0
 [[program]]
 function = "morph2"
 name = "morph2 B"
+[program.s]
 [program.effects]
 chain = ["reverb"]
 [program.effects.configs.reverb.values]

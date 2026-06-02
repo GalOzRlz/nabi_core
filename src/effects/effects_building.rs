@@ -44,12 +44,13 @@ impl CcInit for FxChainFactory {
     fn get_initial_cc(&self) -> [f32; MAX_KNOBS_PER_GROUP] {
         let mut final_cc_array = [0_f32; MAX_KNOBS_PER_GROUP];
         if let Some(definitions) = &self.definitions {
+            //println!("start get definitions {:?}", definitions);
             let mut cc_summation = Vec::with_capacity(definitions.len());
             for def in definitions {
-                cc_summation.push(def.get_initial_cc())
+                cc_summation.push(def.get_initial_cc());
             }
-            for (param) in cc_summation.iter() {
-                for (idx, val) in param.iter().enumerate() {
+            for param in cc_summation.iter() {
+                for (idx, val) in param.iter().filter(|x| **x != 0.0).enumerate() {
                     final_cc_array[idx] = *val;
                 }
             }
@@ -98,10 +99,10 @@ impl FxChainFactory {
         }
     }
 
-    pub fn process_config(&self, config: Option<&TomlEffectSection>) -> Self {
+    pub fn process_config(&mut self, config: Option<&TomlEffectSection>) {
         let registry = get_effects_registry();
         let Some(effects_toml_config) = config else {
-            return Self::new();
+            return;
         };
         let mut definitions = Vec::new();
         let mut fx_names = Vec::new();
@@ -115,6 +116,7 @@ impl FxChainFactory {
                         params.apply_toml_overrides(toml_params);
                     }
                 }
+                //println!("fx run time params: {:?}", params);
                 let runtime_arc = Arc::new(params);
                 let closure = (entry.factory)(runtime_arc.clone());
                 chain.push(closure);
@@ -122,11 +124,9 @@ impl FxChainFactory {
                 definitions.push(runtime_arc);
             }
         }
-        FxChainFactory {
-            chain: Arc::new(chain),
-            node_ids: None,
-            fx_names: Some(fx_names),
-            definitions: Some(definitions),
-        }
+        self.chain = Arc::new(chain);
+        self.node_ids = None;
+        self.fx_names = Some(fx_names);
+        self.definitions = Some(definitions);
     }
 }

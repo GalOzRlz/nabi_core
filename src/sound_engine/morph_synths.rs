@@ -19,8 +19,8 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     // CC: goes from 0.0 to 100 in whole steps
     let fm_ratio_an =
         params.cc_sound_or_default("fm_ratio", state) >> quantize_01_decimal() * constant(100.0);
-    let fm_amount_1 = params.cc_sound_or_default("fm_amount_1", state) * constant(10.0);
-    let fm_amount_2 = params.cc_sound_or_default("fm_amount_2", state) * constant(10.0);
+    let fm_amount_1 = params.cc_sound_or_default("fm_amount_1", state) * constant(13.0);
+    let fm_amount_2 = params.cc_sound_or_default("fm_amount_2", state) * constant(13.0);
 
     let b1_cc = params.cc_sound_or_default("balance_1", state);
     let b2_cc = params.cc_sound_or_default("balance_2", state);
@@ -42,11 +42,9 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     }
     .build_operator(state);
 
-    let morph1 = (state.bent_pitch() >> osc_1a * (constant(1.0) - b1_cc.clone())
-        & osc_1b * b1_cc.clone())
-        * 2.0;
-    let morph2 =
-        (state.bent_pitch() >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc) * 2.0;
+    let morph1 =
+        (state.bent_pitch() >> osc_1a * (constant(1.0) - b1_cc.clone()) & osc_1b * b1_cc.clone());
+    let morph2 = (state.bent_pitch() >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc);
     let synth = Box::new(morph1 + morph2);
     state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
 }
@@ -58,7 +56,7 @@ static MORPH2: SoundFactory = SoundFactory {
         name: "morph2",
         cc_params: Some(Cow::Borrowed(&[
             CcParam {
-                value: ParamType::ZeroOneFloat(0.5),
+                value: ParamType::ZeroOneFloat(0.4),
                 cc_index: 1,
                 name: "balance_1",
                 description: Some(
@@ -72,19 +70,19 @@ static MORPH2: SoundFactory = SoundFactory {
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.5),
+                value: ParamType::ZeroOneFloat(0.0),
                 cc_index: 3,
                 name: "fm_amount_1",
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.5),
+                value: ParamType::ZeroOneFloat(0.0),
                 cc_index: 4,
                 name: "fm_amount_2",
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroHundredFloat(2.0),
+                value: ParamType::ZeroHundredFloat(7.0),
                 cc_index: 0, // static value by default
                 name: "fm_ratio",
                 description: None,

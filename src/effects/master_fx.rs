@@ -1,4 +1,4 @@
-use crate::common::params::{CcParam, ParamType, Parameterized, ToNet};
+use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized, ToNet};
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
@@ -55,11 +55,11 @@ fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
         let room_size_param = params.get_non_cc_param("room_size").unwrap();
         let damping_param = params.get_non_cc_param("damping").unwrap();
         let length_param = params.get_non_cc_param("length").unwrap();
-        let wet_amount = params.cc_sound_or_default("wet_amount", state);
+        let wet_amount = params.cc_fx_or_default("wet_amount", state);
         cc_controlled_reverb(
             wet_amount.to_net(),
-            length_param.value.as_zero_to_one_f32().unwrap(),
-            room_size_param.value.as_zero_to_one_f32().unwrap(),
+            length_param.value.as_f32().unwrap(),
+            room_size_param.value.as_f32().unwrap(),
             damping_param.value.as_zero_to_one_f32().unwrap(),
         )
     })
@@ -76,7 +76,23 @@ static REVERB: EffectDef = EffectDef {
             name: "wet_amount",
             description: None,
         }])),
-        non_cc_params: None,
+        non_cc_params: Some(Cow::Borrowed(&[
+            NonCcParam {
+                value: ParamType::ZeroHundredFloat(8.0),
+                name: "room_size",
+                description: None,
+            },
+            NonCcParam {
+                value: ParamType::ZeroOneFloat(0.55),
+                name: "damping",
+                description: None,
+            },
+            NonCcParam {
+                value: ParamType::ZeroHundredFloat(4.35),
+                name: "length",
+                description: None,
+            },
+        ])),
     },
 };
 

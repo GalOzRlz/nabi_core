@@ -496,7 +496,6 @@ impl<const N: usize> VoiceManager<N> {
         if let Some(entry) = table.entries.get(self.current_patch_num) {
             // 1. Apply effect initial CCs to effect knobs
             for (i, &val) in entry.effects.get_initial_cc().iter().enumerate() {
-                println!("FX {}, {}", i, val);
                 if i < self.states[0].fx_cc_vals.len() {
                     for state in self.states.iter_mut() {
                         if i < state.effect_cc_count {
@@ -513,7 +512,6 @@ impl<const N: usize> VoiceManager<N> {
             .iter()
             .enumerate()
         {
-            println!("FX {}, {}", i, val);
             if i < self.states[0].sound_cc_vals.len() {
                 for state in self.states.iter_mut() {
                     if i < state.sound_cc_count {

@@ -102,7 +102,7 @@ pub fn load_global_config(path: &str) -> GlobalConfig {
 }
 
 // ---------- program TOML structures ----------
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct TomlPatchDef {
     pub function: String,
     pub name: String,
@@ -117,7 +117,7 @@ pub trait ConfigurableMapping {
     fn get_mapping_mut(&mut self) -> Option<&mut HashMap<String, Value>>;
 }
 
-#[derive(Clone, Default, Deserialize)]
+#[derive(Clone, Default, Debug, Deserialize)]
 pub struct ConfigurableMappings {
     pub values: Option<HashMap<String, Value>>,
     pub mapping: Option<HashMap<String, Value>>,
@@ -137,9 +137,8 @@ impl ConfigurableMapping for ConfigurableMappings {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct TomlEffectSection {
-    #[serde(flatten)]
     pub chain: Option<Vec<String>>,
     pub configs: Option<HashMap<String, ConfigurableMappings>>,
 }
@@ -205,7 +204,8 @@ pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
     let default_tuner = midi_hz;
     let mut patch_defs = Vec::new();
 
-    for prog in programs {
+    for (idx, prog) in programs.iter().enumerate() {
+        //println!("prog {:?}: {:?}", idx, prog);
         // --- resolve tuner ---
         let tuning = if let Some(ref tuning_name) = prog.tuning {
             tuner_map
@@ -219,18 +219,17 @@ pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
             default_tuner
         };
 
-        let effects = FxChainFactory::new();
+        let mut effects = FxChainFactory::new();
         effects.process_config(prog.effects.as_ref());
-        let mut sound_factory: SoundFactory = get_sound_from_registry(&*prog.function).clone();
+        let mut sound_factory: SoundFactory =
+            get_sound_from_registry(prog.function.as_str()).clone();
         sound_factory.process_config(prog.sound.as_ref());
-
         let patch_def = PatchDef {
             sound_factory,
             name: prog.name.clone(),
             tuning,
             effects,
         };
-
         patch_defs.push(patch_def);
     }
 
