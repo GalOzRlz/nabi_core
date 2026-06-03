@@ -57,7 +57,7 @@ static MORPH2: SoundFactory = SoundFactory {
         cc_params: Some(Cow::Borrowed(&[
             CcParam {
                 value: ParamType::ZeroOneFloat(0.4),
-                cc_index: 1,
+                cc_norm_index: 1,
                 name: "balance_1",
                 description: Some(
                     "The morphing depth of Oscillator1: moves between osc_1a and osc_1b",
@@ -65,25 +65,25 @@ static MORPH2: SoundFactory = SoundFactory {
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.5),
-                cc_index: 2,
+                cc_norm_index: 2,
                 name: "balance_2",
                 description: None,
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.0),
-                cc_index: 3,
+                cc_norm_index: 3,
                 name: "fm_amount_1",
                 description: None,
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.0),
-                cc_index: 4,
+                cc_norm_index: 4,
                 name: "fm_amount_2",
                 description: None,
             },
             CcParam {
                 value: ParamType::ZeroHundredFloat(7.0),
-                cc_index: 0, // static value by default
+                cc_norm_index: 0, // static value by default
                 name: "fm_ratio",
                 description: None,
             },

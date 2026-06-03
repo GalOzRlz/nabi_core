@@ -1,11 +1,15 @@
 use crate::common::params::CcInit;
-use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
+use crate::config_builder::{
+    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, TomlPatchDef, VoiceStealingConfig,
+};
 use crate::effects::master_fx::master_limiter;
 use crate::ios::midi::PatchButton;
 pub use crate::ios::midi::SynthMsg;
 use crate::patch_builder::KnobGroup;
 use crate::sound_engine::sound_building::SynthFunc;
-use crate::{NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable};
+use crate::{
+    NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable, shared_array_to_f32_array,
+};
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
@@ -288,6 +292,52 @@ impl<const N: usize> VoiceManager<N> {
             sound_node_id: NodeId::new(),
         }
     }
+
+    fn patch_state_to_toml(&self) -> TomlPatchDef {
+        let old_toml = &self.patch_table.entries[self.current_patch_num].toml;
+        let mut new_toml = old_toml.clone();
+        let sound_cc_array = shared_array_to_f32_array(&self.states[0].sound_cc_vals);
+        let fx_cc_array = shared_array_to_f32_array(&self.states[0].fx_cc_vals);
+
+        let mut new_params = self.patch_table.entries[self.current_patch_num].clone();
+
+        new_params
+            .sound_factory
+            .params
+            .apply_cc_state(&sound_cc_array);
+        let new_sound_values = new_params.sound_factory.params.to_config_values();
+
+        let existing_mapping = old_toml.sound.as_ref().and_then(|s| s.mapping.clone());
+        new_toml.sound = Some(ConfigurableMappings {
+            values: Some(new_sound_values),
+            mapping: existing_mapping,
+        });
+
+        if let Some(ref mut toml_effects_section) = new_toml.effects {
+            let mut new_fx_map: HashMap<String, ConfigurableMappings> = HashMap::new();
+            for def in new_params.effects.definitions.iter() {
+                for fx in def.iter() {
+                    let mut new_fx = (**fx).clone();
+                    new_fx.apply_cc_state(&fx_cc_array);
+                    let values = new_fx.to_config_values();
+                    let fx_c_map = ConfigurableMappings {
+                        values: Some(values),
+                        mapping: old_toml
+                            .effects
+                            .as_ref()
+                            .and_then(|section| section.configs.as_ref())
+                            .and_then(|hash_map| hash_map.get(fx.name))
+                            .and_then(|config_m| config_m.mapping.clone()),
+                    };
+                    new_fx_map.insert(fx.name.to_string(), fx_c_map);
+                }
+            }
+            toml_effects_section.configs = Some(new_fx_map);
+        }
+        new_toml
+    }
+
+    pub fn save_patch_state() {}
 
     fn rebuild_and_replace_sound(&mut self) {
         let new_synth = self.patch_table.entries[self.current_patch_num]

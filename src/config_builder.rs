@@ -204,8 +204,7 @@ pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
     let default_tuner = midi_hz;
     let mut patch_defs = Vec::new();
 
-    for (idx, prog) in programs.iter().enumerate() {
-        //println!("prog {:?}: {:?}", idx, prog);
+    for prog in programs.iter() {
         // --- resolve tuner ---
         let tuning = if let Some(ref tuning_name) = prog.tuning {
             tuner_map
@@ -226,9 +225,9 @@ pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
         sound_factory.process_config(prog.sound.as_ref());
         let patch_def = PatchDef {
             sound_factory,
-            name: prog.name.clone(),
             tuning,
             effects,
+            toml: prog.clone(),
         };
         patch_defs.push(patch_def);
     }
@@ -241,7 +240,7 @@ fn reorder_by_names(entries: &mut Vec<PatchDef>, order: &[String]) {
     let indexed: Vec<(usize, PatchDef)> = old_entries.into_iter().enumerate().collect();
     let mut name_to_entry: HashMap<String, (usize, PatchDef)> = HashMap::new();
     for (idx, entry) in indexed {
-        name_to_entry.insert(entry.name.clone(), (idx, entry));
+        name_to_entry.insert(entry.toml.name.clone(), (idx, entry));
     }
 
     let mut new_entries = Vec::with_capacity(name_to_entry.len());

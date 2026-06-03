@@ -57,7 +57,7 @@ fn run_chooser(
                 let program = {
                     let patch_table = patch_table.clone();
                     console_choice_from("Change synth to", &patch_table.entries, |opt| {
-                        opt.name.as_str()
+                        opt.toml.name.as_str()
                     })
                 };
                 midi_msgs.push(SynthMsg::patch_change(program as u8));

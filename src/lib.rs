@@ -25,7 +25,7 @@ mod sound_engine;
 pub mod tui;
 pub mod tunings;
 
-use crate::common::params::{CcAudioNode, CcParam};
+use crate::common::params::{CcArray, CcAudioNode, CcParam};
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use crate::helpers::cc::cc_smooth;
 use crate::tunings::TunerBuilder;
@@ -39,6 +39,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+type SharedArray = [Shared; MAX_KNOBS_PER_GROUP];
+
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
 
@@ -50,6 +52,15 @@ pub const CONTROL_ON: f32 = 1.0;
 
 /// Control value in response to `Note Off` event.
 pub const CONTROL_OFF: f32 = -1.0;
+
+fn shared_array_to_f32_array(cc_vals: &SharedArray) -> CcArray {
+    cc_vals
+        .iter()
+        .map(|shared| shared.value())
+        .collect::<Vec<f32>>()
+        .try_into()
+        .unwrap()
+}
 
 /// `SharedMidiState` objects represent as [fundsp `Shared` atomic variables](https://docs.rs/fundsp/latest/fundsp/shared/struct.Shared.html)
 /// the following MIDI events:
@@ -63,8 +74,8 @@ pub struct SharedMidiState {
     control: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
-    sound_cc_vals: [Shared; MAX_KNOBS_PER_GROUP],
-    fx_cc_vals: [Shared; MAX_KNOBS_PER_GROUP],
+    sound_cc_vals: SharedArray,
+    fx_cc_vals: SharedArray,
     sound_cc_count: usize,
     effect_cc_count: usize,
 }
@@ -100,8 +111,8 @@ impl SharedMidiState {
     pub fn new(
         sound_cc_mapping: &[u8],
         fx_cc_mapping: &[u8],
-        sound_init: &[f32],
-        effect_init: &[f32],
+        sound_init: &CcArray,
+        effect_init: &CcArray,
         tuner: TunerBuilder,
     ) -> Self {
         //println!("sound init: {:?}", sound_init);
@@ -120,27 +131,27 @@ impl SharedMidiState {
         s
     }
 
-    fn sound_cc(&self, idx: usize) -> Option<An<Var>> {
-        if idx < 1 || idx > self.sound_cc_count {
+    fn sound_cc(&self, norm_idx: usize) -> Option<An<Var>> {
+        if norm_idx < 1 || norm_idx > self.sound_cc_count {
             return None;
         }
-        Some(var(&self.sound_cc_vals[idx - 1]))
+        Some(var(&self.sound_cc_vals[norm_idx - 1]))
     }
-    fn fx_cc(&self, idx: usize) -> Option<An<Var>> {
-        if idx < 1 || idx > self.effect_cc_count {
+    fn fx_cc(&self, norm_idx: usize) -> Option<An<Var>> {
+        if norm_idx < 1 || norm_idx > self.effect_cc_count {
             return None;
         }
-        Some(var(&self.fx_cc_vals[idx - 1]))
+        Some(var(&self.fx_cc_vals[norm_idx - 1]))
     }
 
     pub fn get_fx_an_or_default(&self, cc: &CcParam) -> CcAudioNode {
-        self.fx_cc(cc.cc_index)
+        self.fx_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
             >> cc_smooth()
     }
 
     pub fn get_sound_an_or_default(&self, cc: &CcParam) -> CcAudioNode {
-        self.sound_cc(cc.cc_index)
+        self.sound_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
             >> cc_smooth()
     }

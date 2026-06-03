@@ -1,3 +1,4 @@
+use crate::config_builder::TomlPatchDef;
 use crate::effects::effects_building::FxChainFactory;
 use crate::sound_engine::sound_building::SoundFactory;
 use crate::tunings::TunerBuilder;
@@ -21,9 +22,9 @@ pub struct KnobLabel {
 #[derive(Clone)]
 pub struct PatchDef {
     pub sound_factory: SoundFactory,
-    pub name: String,
     pub tuning: TunerBuilder,
     pub effects: FxChainFactory,
+    pub toml: TomlPatchDef,
 }
 
 // ---- PatchTable ----

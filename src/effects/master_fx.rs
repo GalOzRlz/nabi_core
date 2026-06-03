@@ -72,7 +72,7 @@ static REVERB: EffectDef = EffectDef {
         name: "reverb",
         cc_params: Some(Cow::Borrowed(&[CcParam {
             value: ParamType::ZeroOneFloat(0.35),
-            cc_index: 1,
+            cc_norm_index: 1,
             name: "wet_amount",
             description: None,
         }])),
