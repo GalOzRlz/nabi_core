@@ -3,7 +3,8 @@ use crate::note_velocity_from;
 use circular_buffer::CircularBuffer;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 
-struct ButtonEventProcessor {
+#[derive(Clone)]
+pub struct ButtonEventProcessor {
     event_tracker: CircularBuffer<3, [u8; 2]>,
     left_right_array: Option<[u8; 2]>,
     restart: Option<u8>,

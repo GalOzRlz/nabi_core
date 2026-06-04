@@ -43,6 +43,7 @@ pub struct GlobalConfig {
     pub patches_path: PathBuf,
     pub sound_cc_mapping: Vec<u8>,
     pub fx_cc_mapping: Vec<u8>,
+    pub left_right_buttons: [u8; 2],
 }
 
 impl Default for GlobalConfig {
@@ -57,6 +58,7 @@ impl Default for GlobalConfig {
                 path.push("patches".to_string());
                 path
             },
+            left_right_buttons: [25, 26],
         }
     }
 }
@@ -66,7 +68,6 @@ impl Default for GlobalConfig {
 struct GlobalConfigToml {
     #[serde(default)]
     global: GlobalSection,
-    patches_path: PathBuf,
 }
 
 #[derive(Deserialize, Default)]
@@ -82,12 +83,18 @@ struct GlobalSection {
 
     #[serde(default)]
     synth_release: Option<FreeVoiceStrategy>,
+
+    #[serde(default)]
+    patches_path: Option<PathBuf>,
+
+    #[serde(default)]
+    left_right_buttons: Option<[u8; 2]>,
 }
 
 pub fn load_global_config(path: &str) -> GlobalConfig {
     let defaults = GlobalConfig::default();
 
-    match std::fs::read_to_string(path) {
+    match fs::read_to_string(path) {
         Ok(text) => match toml::from_str::<GlobalConfigToml>(&text) {
             Ok(cfg) => GlobalConfig {
                 sound_cc_mapping: cfg
@@ -97,7 +104,15 @@ pub fn load_global_config(path: &str) -> GlobalConfig {
                 fx_cc_mapping: cfg.global.fx_cc_mapping.unwrap_or(defaults.fx_cc_mapping),
                 voice_stealing: cfg.global.synth_stealing.unwrap_or(defaults.voice_stealing),
                 voice_release: cfg.global.synth_release.unwrap_or(defaults.voice_release),
-                patches_path: cfg.patches_path.to_path_buf(),
+                patches_path: cfg
+                    .global
+                    .patches_path
+                    .unwrap_or(defaults.patches_path)
+                    .to_path_buf(),
+                left_right_buttons: cfg
+                    .global
+                    .left_right_buttons
+                    .unwrap_or(defaults.left_right_buttons),
             },
             Err(e) => {
                 eprintln!("Warning: failed to parse midi.toml: {e}. Using defaults.");

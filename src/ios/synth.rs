@@ -3,8 +3,8 @@ use crate::config_builder::{
     ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, TomlPatchDef, VoiceStealingConfig,
 };
 use crate::effects::master_fx::master_limiter;
-use crate::ios::midi::PatchButtonEvent;
 pub use crate::ios::midi::SynthMsg;
+use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent};
 use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
@@ -32,7 +32,6 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 struct AudioBuffers {
@@ -102,11 +101,9 @@ pub trait Synth<const N: usize> {
 pub struct SynthPlayer<const N: usize> {
     voice_manager: VoiceManager<N>,
     buffers: AudioBuffers,
-    patches_path: PathBuf,
 }
 impl<const N: usize> Synth<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
-        let patches_path = config.patches_path.clone();
         let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
         Self {
             voice_manager,
@@ -114,7 +111,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
             },
-            patches_path,
         }
     }
 
@@ -206,33 +202,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
     }
 }
 
-impl<const N: usize> SynthPlayer<N> {
-    pub fn save_patch_state(&self) {
-        let toml = self.voice_manager.patch_state_to_toml();
-        let new_file_name = format!(
-            "{}-{}.toml",
-            self.voice_manager.get_current_patch().toml.name,
-            Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
-        );
-        let new_toml =
-            toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
-        let mut path_copy = self.patches_path.clone();
-        path_copy.push(new_file_name);
-        fs::write(path_copy, new_toml).expect("failed to save patch state to TOML");
-    }
-    pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
-        match event {
-            PatchButtonEvent::ChangeProgram(offset) => {
-                self.voice_manager.change_patch_with_offset(offset)
-            }
-            PatchButtonEvent::Save => self.save_patch_state(),
-            PatchButtonEvent::Restart => todo!("restart synth"),
-            PatchButtonEvent::Shutdown => todo!("shutdown synth"),
-            PatchButtonEvent::Ignore => {}
-        }
-    }
-}
-
 pub fn write_data_block<T: Sample + FromSample<f32>>(
     output: &mut [T],
     channels: usize,
@@ -282,6 +251,7 @@ struct VoiceManager<const N: usize> {
     mix_net: Net,
     current_patch_num: usize,
     cc_to_logical_num: HashMap<u8, (KnobGroup, usize)>,
+    button_event_processor: ButtonEventProcessor,
 }
 
 impl<const N: usize> VoiceManager<N> {
@@ -322,6 +292,11 @@ impl<const N: usize> VoiceManager<N> {
             fx_node_id,
             mix_net: Net::new(2, 2),
             sound_node_id: NodeId::new(),
+            button_event_processor: ButtonEventProcessor::new(
+                Some(config.left_right_buttons),
+                None,
+                None,
+            ),
         }
     }
     pub fn get_current_patch(&self) -> &PatchDef {
@@ -370,7 +345,30 @@ impl<const N: usize> VoiceManager<N> {
         }
         new_toml
     }
+    pub fn save_patch_state(&self) {
+        let toml = self.patch_state_to_toml();
+        let new_file_name = format!(
+            "{}-{}.toml",
+            self.get_current_patch().toml.name,
+            Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
+        );
+        let new_toml =
+            toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
+        let mut path_copy = self.config.patches_path.clone();
+        path_copy.push(new_file_name);
+        fs::write(path_copy, new_toml).expect("failed to save patch state to TOML");
+    }
+    pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
+        match event {
+            PatchButtonEvent::ChangeProgram(offset) => self.change_patch_with_offset(offset),
+            PatchButtonEvent::Save => self.save_patch_state(),
+            PatchButtonEvent::Restart => todo!("restart synth"),
+            PatchButtonEvent::Shutdown => todo!("shutdown synth"),
+            PatchButtonEvent::Ignore => {}
+        }
+    }
 
+    /// Rebuild current sound based on the state of the patch table - without committing.
     fn rebuild_and_replace_sound(&mut self) {
         let new_synth = self.patch_table.entries[self.current_patch_num]
             .sound_factory
@@ -384,6 +382,8 @@ impl<const N: usize> VoiceManager<N> {
             Box::new(new_sound_net),
         );
     }
+
+    /// Rebuild current fx chain based on the state of the patch table - without committing.
     fn rebuild_and_replace_fx_chain(&mut self) {
         let entry = &self.patch_table.entries[self.current_patch_num].effects;
         let new_fx_net = entry.clone().build_chain(&self.states[0]);
@@ -391,9 +391,11 @@ impl<const N: usize> VoiceManager<N> {
             .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
     }
 
+    /// Commit net changes (sound rebuilt, effects chain rebuild, etc.)
     fn commit_patch_changes(&mut self) {
         self.mix_net.commit()
     }
+
     fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
         let mut cc_to_logical_num = HashMap::new();
         for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
@@ -482,8 +484,8 @@ impl<const N: usize> VoiceManager<N> {
                 } => {
                     //eprintln!("Control change from {:?} to {:?}", control, value);
                     // quantized to 0.0-1.0 with 0.01 steps:
-                    let norm = *value as f32 / 127.0;
                     if let Some(&(group, idx)) = self.cc_to_logical_num.get(control) {
+                        let norm = *value as f32 / 127.0;
                         match group {
                             KnobGroup::Sound => {
                                 for state in self.states.iter_mut() {
@@ -496,6 +498,9 @@ impl<const N: usize> VoiceManager<N> {
                                 }
                             }
                         }
+                    } else {
+                        let event = self.button_event_processor.process_event(control, value);
+                        self.handle_button_event(event);
                     }
                 }
                 _ => {}
