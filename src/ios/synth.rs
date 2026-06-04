@@ -3,15 +3,16 @@ use crate::config_builder::{
     ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, TomlPatchDef, VoiceStealingConfig,
 };
 use crate::effects::master_fx::master_limiter;
-use crate::ios::midi::PatchButton;
+use crate::ios::midi::PatchButtonEvent;
 pub use crate::ios::midi::SynthMsg;
-use crate::patch_builder::KnobGroup;
+use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
     NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable, shared_array_to_f32_array,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
+use chrono::Local;
 use cpal::{
     Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
@@ -30,9 +31,11 @@ use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
-struct Buffers {
+struct AudioBuffers {
     output: BufferVec,
     input: BufferVec,
 }
@@ -98,18 +101,20 @@ pub trait Synth<const N: usize> {
 /// The default player that has one stereo stream in and one out (U2 inputs, U2 outputs)
 pub struct SynthPlayer<const N: usize> {
     voice_manager: VoiceManager<N>,
-    buffers: Buffers,
+    buffers: AudioBuffers,
+    patches_path: PathBuf,
 }
-
 impl<const N: usize> Synth<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
+        let patches_path = config.patches_path.clone();
         let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
         Self {
             voice_manager,
-            buffers: Buffers {
+            buffers: AudioBuffers {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
             },
+            patches_path,
         }
     }
 
@@ -198,6 +203,33 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                 None,
             )
             .or_else(|err| bail!("{err:?}"))
+    }
+}
+
+impl<const N: usize> SynthPlayer<N> {
+    pub fn save_patch_state(&self) {
+        let toml = self.voice_manager.patch_state_to_toml();
+        let new_file_name = format!(
+            "{}-{}.toml",
+            self.voice_manager.get_current_patch().toml.name,
+            Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
+        );
+        let new_toml =
+            toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
+        let mut path_copy = self.patches_path.clone();
+        path_copy.push(new_file_name);
+        fs::write(path_copy, new_toml).expect("failed to save patch state to TOML");
+    }
+    pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
+        match event {
+            PatchButtonEvent::ChangeProgram(offset) => {
+                self.voice_manager.change_patch_with_offset(offset)
+            }
+            PatchButtonEvent::Save => self.save_patch_state(),
+            PatchButtonEvent::Restart => todo!("restart synth"),
+            PatchButtonEvent::Shutdown => todo!("shutdown synth"),
+            PatchButtonEvent::Ignore => {}
+        }
     }
 }
 
@@ -292,20 +324,22 @@ impl<const N: usize> VoiceManager<N> {
             sound_node_id: NodeId::new(),
         }
     }
-
+    pub fn get_current_patch(&self) -> &PatchDef {
+        &self.patch_table.entries[self.current_patch_num]
+    }
     fn patch_state_to_toml(&self) -> TomlPatchDef {
-        let old_toml = &self.patch_table.entries[self.current_patch_num].toml;
+        let old_toml = &self.get_current_patch().toml;
         let mut new_toml = old_toml.clone();
         let sound_cc_array = shared_array_to_f32_array(&self.states[0].sound_cc_vals);
         let fx_cc_array = shared_array_to_f32_array(&self.states[0].fx_cc_vals);
 
-        let mut new_params = self.patch_table.entries[self.current_patch_num].clone();
+        let mut new_params = (*self.get_current_patch()).clone();
 
         new_params
             .sound_factory
             .params
             .apply_cc_state(&sound_cc_array);
-        let new_sound_values = new_params.sound_factory.params.to_config_values();
+        let new_sound_values = new_params.sound_factory.params.to_toml_values();
 
         let existing_mapping = old_toml.sound.as_ref().and_then(|s| s.mapping.clone());
         new_toml.sound = Some(ConfigurableMappings {
@@ -319,7 +353,7 @@ impl<const N: usize> VoiceManager<N> {
                 for fx in def.iter() {
                     let mut new_fx = (**fx).clone();
                     new_fx.apply_cc_state(&fx_cc_array);
-                    let values = new_fx.to_config_values();
+                    let values = new_fx.to_toml_values();
                     let fx_c_map = ConfigurableMappings {
                         values: Some(values),
                         mapping: old_toml
@@ -336,8 +370,6 @@ impl<const N: usize> VoiceManager<N> {
         }
         new_toml
     }
-
-    pub fn save_patch_state() {}
 
     fn rebuild_and_replace_sound(&mut self) {
         let new_synth = self.patch_table.entries[self.current_patch_num]
@@ -523,15 +555,6 @@ impl<const N: usize> VoiceManager<N> {
             self.pitch2state[pitch as usize] = None;
         }
     }
-
-    pub fn change_patch_button(&mut self, button: PatchButton) {
-        let offset = match button {
-            PatchButton::Right => 1,
-            PatchButton::Left => -1,
-        };
-
-        self.change_patch_with_offset(offset)
-    }
     fn change_patch_with_offset(&mut self, offset: i32) {
         let len = self.patch_table.entries.len();
         if len == 0 {
@@ -539,8 +562,9 @@ impl<const N: usize> VoiceManager<N> {
         }
         // Use modulo arithmetic for wrap-around
         let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
-        self.current_patch_num = new_num as usize;
+        self.change_patch(new_num as usize);
     }
+
     fn apply_init_cc_vals(&mut self) {
         let table = self.patch_table.clone();
         if let Some(entry) = table.entries.get(self.current_patch_num) {

@@ -222,7 +222,7 @@ impl Parameterized {
         Err(anyhow!(format!("CC-Parameter {} not found", name)))
     }
 
-    pub fn to_config_values(&self) -> HashMap<String, Value> {
+    pub fn to_toml_values(&self) -> HashMap<String, Value> {
         let mut new_map: HashMap<String, Value> = HashMap::new();
         if let Some(params) = self.cc_params.as_ref() {
             for def in params.iter() {
@@ -343,6 +343,7 @@ where
     }
 }
 
+/// Use costume mapping from the toml file's program overrides.
 pub fn apply_toml_mapping(params: &mut Parameterized, toml_mapping: &HashMap<String, Value>) {
     if let Some(ref mut cc_params) = params.cc_params {
         let params_mut = cc_params.to_mut();
@@ -382,7 +383,7 @@ pub enum OscillatorType {
     Sine,
     Pulse,
     Square,
-    WaveTable(String),
+    WaveTable(PathBuf),
     None,
 }
 
@@ -424,11 +425,11 @@ impl OscillatorType {
             OscillatorType::Pulse => to_mono_unit(Box::new(poly_square())),
             OscillatorType::Square => to_mono_unit(Box::new(poly_square())),
             OscillatorType::None => to_mono_unit(Box::new(sine() * 0.0)),
-            OscillatorType::WaveTable(s) => to_mono_unit(Self::path_to_wavetable_synth(s)),
+            OscillatorType::WaveTable(s) => to_mono_unit(Self::wavetable_synth_from_path(s)),
         }
     }
 
-    fn path_to_wavetable_synth(path: &str) -> Box<An<WaveSynth<U1>>> {
+    fn wavetable_synth_from_path(path: &PathBuf) -> Box<An<WaveSynth<U1>>> {
         let mut wav_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         wav_path.push(path);
         let wave = Wave::load(wav_path).expect("Failed to load WAV file for wavetable synth!");

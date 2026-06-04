@@ -1,7 +1,9 @@
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use midir::MidiInput;
-use nabi_core::config_builder::{create_ordered_patch_table, load_global_config};
+use nabi_core::config_builder::{
+    create_ordered_patch_table, gather_toml_files_recursive, load_global_config,
+};
 use nabi_core::ios::synth::SynthMsg;
 use nabi_core::ios::threads::{start_input_thread, start_output_thread};
 use nabi_core::patch_builder::PatchTable;
@@ -29,10 +31,8 @@ fn main() -> anyhow::Result<()> {
         let midi_msgs = Arc::new(SegQueue::new());
         while reset.load() {}
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
-        let patch_table = Arc::new(
-            // todo: make the function search for all in patches/*.toml
-            create_ordered_patch_table(&["patches/patches.toml"], &"order.toml"),
-        );
+        let patch_paths = gather_toml_files_recursive(&global_config.patches_path);
+        let patch_table = Arc::new(create_ordered_patch_table(patch_paths, &"order.toml"));
         start_output_thread::<10>(
             midi_msgs.clone(),
             patch_table.clone(),

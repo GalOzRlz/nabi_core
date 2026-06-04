@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::fm::FmOperator;
+use crate::common::fm::FmConnector;
 use crate::common::helpers::quantize_01_decimal;
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::helpers::fundsp::to_net;
@@ -26,21 +26,21 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let b2_cc = params.cc_sound_or_default("balance_2", state);
 
     // The B oscillators are modulated by the A oscillators
-    let osc_1b = FmOperator {
+    let osc_1b = FmConnector {
         modulator: osc_1a.clone(),
         carrier: osc_1b,
         ratio: to_net(fm_ratio_an.clone()),
         amount: to_net(fm_amount_1),
     }
-    .build_operator(state);
+    .connect_operators(state);
 
-    let osc_2b = FmOperator {
+    let osc_2b = FmConnector {
         modulator: osc_2a.clone(),
         carrier: osc_2b,
         ratio: to_net(fm_ratio_an),
         amount: to_net(fm_amount_2),
     }
-    .build_operator(state);
+    .connect_operators(state);
 
     let morph1 =
         (state.bent_pitch() >> osc_1a * (constant(1.0) - b1_cc.clone()) & osc_1b * b1_cc.clone());
