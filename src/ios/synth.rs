@@ -391,7 +391,7 @@ impl<const N: usize> VoiceManager<N> {
             .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
     }
 
-    /// Commit net changes (sound rebuilt, effects chain rebuild, etc.)
+    /// Commit patch Net changes (sound rebuilt, effects chain rebuild, etc.)
     fn commit_patch_changes(&mut self) {
         self.mix_net.commit()
     }

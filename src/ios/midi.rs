@@ -25,12 +25,14 @@ impl ButtonEventProcessor {
         restart: Option<u8>,
         shutdown: Option<u8>,
     ) -> Self {
-        ButtonEventProcessor {
+        let mut s = ButtonEventProcessor {
             event_tracker: Default::default(),
             left_right_array,
             restart,
             shutdown,
-        }
+        };
+        s.event_tracker.push_back([0, 0]); // initialize state
+        s
     }
 
     pub fn process_event(&mut self, cc_idx: &u8, control: &u8) -> PatchButtonEvent {
