@@ -1,6 +1,6 @@
 use crate::common::params::CcInit;
 use crate::config_builder::{
-    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, TomlPatchDef, VoiceStealingConfig,
+    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, VoiceStealingConfig,
 };
 use crate::effects::master_fx::master_limiter;
 pub use crate::ios::midi::SynthMsg;
@@ -302,7 +302,9 @@ impl<const N: usize> VoiceManager<N> {
     pub fn get_current_patch(&self) -> &PatchDef {
         &self.patch_table.entries[self.current_patch_num]
     }
-    fn patch_state_to_toml(&self) -> TomlPatchDef {
+
+    /// Flushes the patch state into a new toml file. Adds a pet name to the patch name and a date string to the file.
+    fn patch_state_to_toml(&self) -> ProgramsFile {
         let old_toml = &self.get_current_patch().toml;
         let mut new_toml = old_toml.clone();
         let sound_cc_array = shared_array_to_f32_array(&self.states[0].sound_cc_vals);
@@ -343,7 +345,12 @@ impl<const N: usize> VoiceManager<N> {
             }
             toml_effects_section.configs = Some(new_fx_map);
         }
+        let pet_name: Option<String> = petname::petname(1, "");
         new_toml
+            .name
+            .extend(pet_name.unwrap_or("-x".to_string()).chars());
+        let new_vec = vec![new_toml];
+        ProgramsFile::new(new_vec)
     }
     pub fn save_patch_state(&self) {
         let toml = self.patch_state_to_toml();
@@ -360,8 +367,14 @@ impl<const N: usize> VoiceManager<N> {
     }
     pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
         match event {
-            PatchButtonEvent::ChangeProgram(offset) => self.change_patch_with_offset(offset),
-            PatchButtonEvent::Save => self.save_patch_state(),
+            PatchButtonEvent::ChangeProgram(offset) => {
+                println!("Changing program by offset {}", offset);
+                self.change_patch_with_offset(offset)
+            }
+            PatchButtonEvent::Save => {
+                println!("Saving patch state");
+                self.save_patch_state()
+            }
             PatchButtonEvent::Restart => todo!("restart synth"),
             PatchButtonEvent::Shutdown => todo!("shutdown synth"),
             PatchButtonEvent::Ignore => {}
@@ -611,6 +624,7 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
+            println!("changed to patch: {}", entry.toml.name)
         }
     }
 

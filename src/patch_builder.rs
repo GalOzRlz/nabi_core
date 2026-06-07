@@ -1,7 +1,7 @@
 use crate::config_builder::TomlPatchDef;
 use crate::effects::effects_building::FxChainFactory;
 use crate::sound_engine::sound_building::SoundFactory;
-use crate::tunings::TunerBuilder;
+use crate::tuning::tunings::TunerBuilder;
 use std::collections::HashMap;
 
 pub type CcMap = HashMap<String, usize>;

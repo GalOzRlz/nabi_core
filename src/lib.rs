@@ -23,12 +23,11 @@ pub mod ios;
 pub mod patch_builder;
 mod sound_engine;
 pub mod tui;
-pub mod tunings;
+mod tuning;
 
 use crate::common::params::{CcArray, CcAudioNode, CcParam};
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use crate::helpers::cc::cc_smooth;
-use crate::tunings::TunerBuilder;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -38,6 +37,7 @@ use midi_msg::MidiMsg;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tuning::tunings::TunerBuilder;
 
 type SharedArray = [Shared; MAX_KNOBS_PER_GROUP];
 

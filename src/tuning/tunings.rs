@@ -1,5 +1,8 @@
 use fundsp::math::midi_hz;
-use inventory;
+use linkme::distributed_slice;
+
+#[distributed_slice]
+pub static TUNERS: [TunerEntry] = [..];
 
 const WELL_C_MINUS_1: f32 = 8.203_544;
 
@@ -10,24 +13,10 @@ const STANDARD_C: f32 = 8.18;
 /// A tuner converts a MIDI note (0–127) to a frequency (Hz).
 pub type TunerBuilder = fn(f32) -> f32;
 
-#[macro_export]
-macro_rules! register_tuner {
-    ($name:expr, $tuner:ident) => {
-        inventory::submit! {
-            TunerEntry {
-                name: $name,
-                tuner: $tuner as fn(f32) -> f32,
-            }
-        }
-    };
-}
-
 pub struct TunerEntry {
     pub name: &'static str,
     pub tuner: TunerBuilder,
 }
-
-inventory::collect!(TunerEntry);
 
 /// Terry Riley's "Harp of New Albion" tuning which is a modified Malcolm tuning (Limit-5).
 /// Adapted from the Scala library: https://www.huygens-fokker.org/scala/
@@ -79,7 +68,7 @@ pub fn well_temperament(midi_pitch: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::tunings::{STANDARD_C, just_intonation, well_temperament};
+    use crate::tuning::tunings::{STANDARD_C, just_intonation, well_temperament};
     use float_eq::assert_float_eq;
 
     #[test]
@@ -138,6 +127,20 @@ mod tests {
     }
 }
 
-register_tuner!("just intonation", just_intonation);
-register_tuner!("well-tempered", well_temperament);
-register_tuner!("standard equal", midi_hz);
+#[distributed_slice(TUNERS)]
+static STANDARD: TunerEntry = TunerEntry {
+    name: "standard equal",
+    tuner: midi_hz,
+};
+
+#[distributed_slice(TUNERS)]
+static JUST_INTONATION: TunerEntry = TunerEntry {
+    name: "just intonation",
+    tuner: just_intonation,
+};
+
+#[distributed_slice(TUNERS)]
+static WELL_TEMPERED: TunerEntry = TunerEntry {
+    name: "well-tempered",
+    tuner: well_temperament,
+};

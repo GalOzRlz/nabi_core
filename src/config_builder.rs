@@ -1,7 +1,7 @@
 use crate::effects::effects_building::FxChainFactory;
 use crate::patch_builder::{PatchDef, PatchTable};
 use crate::sound_engine::sound_building::{SoundFactory, get_sound_from_registry};
-use crate::tunings::{TunerBuilder, TunerEntry};
+use crate::tuning::tunings::{TUNERS, TunerBuilder};
 use fundsp::math::midi_hz;
 use globwalk::GlobWalkerBuilder;
 use serde::{Deserialize, Serialize};
@@ -168,9 +168,15 @@ pub struct TomlEffectSection {
     pub configs: Option<HashMap<String, ConfigurableMappings>>,
 }
 
-#[derive(Deserialize)]
-struct ProgramsFile {
-    program: Vec<TomlPatchDef>,
+#[derive(Deserialize, Serialize, Debug)]
+pub struct ProgramsFile {
+    pub(crate) program: Vec<TomlPatchDef>,
+}
+
+impl ProgramsFile {
+    pub fn new(program: Vec<TomlPatchDef>) -> Self {
+        ProgramsFile { program }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,9 +228,8 @@ pub fn load_all_programs(paths: Vec<PathBuf>) -> Vec<TomlPatchDef> {
 
 // ---------- build the PatchTable ----------
 pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
-    let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
-        .map(|e| (e.name, e.tuner))
-        .collect();
+    let tuner_map: HashMap<&str, TunerBuilder> =
+        TUNERS.into_iter().map(|e| (e.name, e.tuner)).collect();
 
     let default_tuner = midi_hz;
     let mut patch_defs = Vec::new();
