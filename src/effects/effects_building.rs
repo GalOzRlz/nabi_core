@@ -20,10 +20,11 @@ pub fn get_effects_registry() -> EffectsRegistry {
     registry
 }
 
-pub fn get_effect_from_registry(fx_name: &str, registry: &EffectsRegistry) -> &'static EffectDef {
-    registry
-        .get(fx_name)
-        .unwrap_or_else(|| panic!("Unknown effect: {}", fx_name))
+pub fn get_effect_from_registry(
+    fx_name: &str,
+    registry: &EffectsRegistry,
+) -> Option<&'static EffectDef> {
+    registry.get(fx_name).map(|x| *x)
 }
 
 #[derive(Clone)]
@@ -76,9 +77,10 @@ impl FxChainFactory {
         let mut chain = Vec::new();
         for (idx, effect) in self.fx_names.as_ref().unwrap().iter().enumerate() {
             let params_arc = self.definitions.as_ref().unwrap()[idx].clone();
-            let factory = get_effect_from_registry(effect, &registry).factory;
-            let closure = (factory)(params_arc);
-            chain.push(closure);
+            if let Some(def) = get_effect_from_registry(effect, &registry) {
+                let closure = (def.factory)(params_arc);
+                chain.push(closure);
+            }
         }
         self.chain = Arc::new(chain);
         self.build_chain(shared_midi_state)
@@ -109,19 +111,19 @@ impl FxChainFactory {
         let mut chain = Vec::new();
         if let Some(fx_chain) = &effects_toml_config.chain {
             for fx_name in fx_chain.iter() {
-                let entry = get_effect_from_registry(fx_name, &registry);
-                let mut params = entry.params.clone();
-                if let Some(configs) = &effects_toml_config.configs {
-                    if let Some(toml_params) = configs.get(fx_name) {
-                        params.apply_toml_overrides(toml_params);
+                if let Some(entry) = get_effect_from_registry(fx_name, &registry) {
+                    let mut params = entry.params.clone();
+                    if let Some(configs) = &effects_toml_config.configs {
+                        if let Some(toml_params) = configs.get(fx_name) {
+                            params.apply_toml_overrides(toml_params);
+                        }
                     }
+                    let runtime_arc = Arc::new(params);
+                    let closure = (entry.factory)(runtime_arc.clone());
+                    chain.push(closure);
+                    fx_names.push(fx_name.to_string());
+                    definitions.push(runtime_arc);
                 }
-                //println!("fx run time params: {:?}", params);
-                let runtime_arc = Arc::new(params);
-                let closure = (entry.factory)(runtime_arc.clone());
-                chain.push(closure);
-                fx_names.push(fx_name.to_string());
-                definitions.push(runtime_arc);
             }
         }
         self.chain = Arc::new(chain);

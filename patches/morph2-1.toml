@@ -17,18 +17,3 @@ wet_amount = 0.5
 [program.effects.configs.eq2.values]
 lowcut = 0.0
 highcut = 1.0
-
-[[program]]
-function = "morph2"
-name = "morph2 B"
-[program.s]
-[program.effects]
-chain = ["reverb"]
-[program.effects.configs.reverb.values]
-# Construction parameters (never modulated)
-room_size = 3.8
-damping   = 0.5
-length    = 4.2
-wet_amount = 0.3
-[program.effects.configs.reverb.mapping]
-wet_amount = 2

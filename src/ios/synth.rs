@@ -1,13 +1,18 @@
 use crate::common::params::CcInit;
-use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
+use crate::config_builder::{
+    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, VoiceStealingConfig,
+};
 use crate::effects::master_fx::master_limiter;
-use crate::ios::midi::PatchButton;
 pub use crate::ios::midi::SynthMsg;
-use crate::patch_builder::KnobGroup;
+use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent};
+use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
-use crate::{NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable};
+use crate::{
+    NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable, shared_array_to_f32_array,
+};
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
+use chrono::Local;
 use cpal::{
     Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
@@ -26,9 +31,10 @@ use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs;
 use std::sync::Arc;
 
-struct Buffers {
+struct AudioBuffers {
     output: BufferVec,
     input: BufferVec,
 }
@@ -94,15 +100,14 @@ pub trait Synth<const N: usize> {
 /// The default player that has one stereo stream in and one out (U2 inputs, U2 outputs)
 pub struct SynthPlayer<const N: usize> {
     voice_manager: VoiceManager<N>,
-    buffers: Buffers,
+    buffers: AudioBuffers,
 }
-
 impl<const N: usize> Synth<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
         let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
         Self {
             voice_manager,
-            buffers: Buffers {
+            buffers: AudioBuffers {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
             },
@@ -246,6 +251,7 @@ struct VoiceManager<const N: usize> {
     mix_net: Net,
     current_patch_num: usize,
     cc_to_logical_num: HashMap<u8, (KnobGroup, usize)>,
+    button_event_processor: ButtonEventProcessor,
 }
 
 impl<const N: usize> VoiceManager<N> {
@@ -286,9 +292,96 @@ impl<const N: usize> VoiceManager<N> {
             fx_node_id,
             mix_net: Net::new(2, 2),
             sound_node_id: NodeId::new(),
+            button_event_processor: ButtonEventProcessor::new(
+                Some(config.left_right_buttons),
+                None,
+                None,
+            ),
+        }
+    }
+    pub fn get_current_patch(&self) -> &PatchDef {
+        &self.patch_table.entries[self.current_patch_num]
+    }
+
+    /// Flushes the patch state into a new toml file. Adds a pet name to the patch name and a date string to the file.
+    fn patch_state_to_toml(&self) -> ProgramsFile {
+        let old_toml = &self.get_current_patch().toml;
+        let mut new_toml = old_toml.clone();
+        let sound_cc_array = shared_array_to_f32_array(&self.states[0].sound_cc_vals);
+        let fx_cc_array = shared_array_to_f32_array(&self.states[0].fx_cc_vals);
+
+        let mut new_params = (*self.get_current_patch()).clone();
+
+        new_params
+            .sound_factory
+            .params
+            .apply_cc_state(&sound_cc_array);
+        let new_sound_values = new_params.sound_factory.params.to_toml_values();
+
+        let existing_mapping = old_toml.sound.as_ref().and_then(|s| s.mapping.clone());
+        new_toml.sound = Some(ConfigurableMappings {
+            values: Some(new_sound_values),
+            mapping: existing_mapping,
+        });
+
+        if let Some(ref mut toml_effects_section) = new_toml.effects {
+            let mut new_fx_map: HashMap<String, ConfigurableMappings> = HashMap::new();
+            for def in new_params.effects.definitions.iter() {
+                for fx in def.iter() {
+                    let mut new_fx = (**fx).clone();
+                    new_fx.apply_cc_state(&fx_cc_array);
+                    let values = new_fx.to_toml_values();
+                    let fx_c_map = ConfigurableMappings {
+                        values: Some(values),
+                        mapping: old_toml
+                            .effects
+                            .as_ref()
+                            .and_then(|section| section.configs.as_ref())
+                            .and_then(|hash_map| hash_map.get(fx.name))
+                            .and_then(|config_m| config_m.mapping.clone()),
+                    };
+                    new_fx_map.insert(fx.name.to_string(), fx_c_map);
+                }
+            }
+            toml_effects_section.configs = Some(new_fx_map);
+        }
+        let pet_name: Option<String> = petname::petname(1, "");
+        new_toml
+            .name
+            .extend(pet_name.unwrap_or("-x".to_string()).chars());
+        let new_vec = vec![new_toml];
+        ProgramsFile::new(new_vec)
+    }
+    pub fn save_patch_state(&self) {
+        let toml = self.patch_state_to_toml();
+        let new_file_name = format!(
+            "{}-{}.toml",
+            self.get_current_patch().toml.name,
+            Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
+        );
+        let new_toml =
+            toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
+        let mut path_copy = self.config.patches_path.clone();
+        path_copy.push(new_file_name);
+        fs::write(path_copy, new_toml).expect("failed to save patch state to TOML");
+    }
+    pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
+        match event {
+            PatchButtonEvent::ChangeProgram(offset) => {
+                println!("Changing program by offset {}", offset);
+                self.change_patch_with_offset(offset)
+            }
+            PatchButtonEvent::Save => {
+                println!("Saving patch state");
+                self.save_patch_state()
+            }
+            PatchButtonEvent::Restart => todo!("restart synth"),
+            PatchButtonEvent::Shutdown => todo!("shutdown synth"),
+            PatchButtonEvent::Ignore => {}
         }
     }
 
+    /// Rebuild current sound based on the state of the patch table - without committing.
     fn rebuild_and_replace_sound(&mut self) {
         let new_synth = self.patch_table.entries[self.current_patch_num]
             .sound_factory
@@ -302,6 +395,8 @@ impl<const N: usize> VoiceManager<N> {
             Box::new(new_sound_net),
         );
     }
+
+    /// Rebuild current fx chain based on the state of the patch table - without committing.
     fn rebuild_and_replace_fx_chain(&mut self) {
         let entry = &self.patch_table.entries[self.current_patch_num].effects;
         let new_fx_net = entry.clone().build_chain(&self.states[0]);
@@ -309,9 +404,11 @@ impl<const N: usize> VoiceManager<N> {
             .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
     }
 
+    /// Commit patch Net changes (sound rebuilt, effects chain rebuild, etc.)
     fn commit_patch_changes(&mut self) {
         self.mix_net.commit()
     }
+
     fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
         let mut cc_to_logical_num = HashMap::new();
         for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
@@ -400,8 +497,8 @@ impl<const N: usize> VoiceManager<N> {
                 } => {
                     //eprintln!("Control change from {:?} to {:?}", control, value);
                     // quantized to 0.0-1.0 with 0.01 steps:
-                    let norm = *value as f32 / 127.0;
                     if let Some(&(group, idx)) = self.cc_to_logical_num.get(control) {
+                        let norm = *value as f32 / 127.0;
                         match group {
                             KnobGroup::Sound => {
                                 for state in self.states.iter_mut() {
@@ -414,6 +511,9 @@ impl<const N: usize> VoiceManager<N> {
                                 }
                             }
                         }
+                    } else {
+                        let event = self.button_event_processor.process_event(control, value);
+                        self.handle_button_event(event);
                     }
                 }
                 _ => {}
@@ -473,15 +573,6 @@ impl<const N: usize> VoiceManager<N> {
             self.pitch2state[pitch as usize] = None;
         }
     }
-
-    pub fn change_patch_button(&mut self, button: PatchButton) {
-        let offset = match button {
-            PatchButton::Right => 1,
-            PatchButton::Left => -1,
-        };
-
-        self.change_patch_with_offset(offset)
-    }
     fn change_patch_with_offset(&mut self, offset: i32) {
         let len = self.patch_table.entries.len();
         if len == 0 {
@@ -489,8 +580,9 @@ impl<const N: usize> VoiceManager<N> {
         }
         // Use modulo arithmetic for wrap-around
         let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
-        self.current_patch_num = new_num as usize;
+        self.change_patch(new_num as usize);
     }
+
     fn apply_init_cc_vals(&mut self) {
         let table = self.patch_table.clone();
         if let Some(entry) = table.entries.get(self.current_patch_num) {
@@ -532,6 +624,7 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
+            println!("changed to patch: {}", entry.toml.name)
         }
     }
 
