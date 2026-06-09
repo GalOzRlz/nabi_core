@@ -3,6 +3,7 @@ use crate::common::fm::FmConnector;
 use crate::common::helpers::quantize_01_decimal;
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::helpers::fundsp::to_net;
+use crate::sound_engine::common::detune_map_semitone;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::prelude64::*;
@@ -15,6 +16,9 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_1b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
     let osc_2a = params.get_osc_node_type("osc2_a").unwrap().get_osc_node();
     let osc_2b = params.get_osc_node_type("osc2_b").unwrap().get_osc_node();
+
+    let detune1 = params.cc_sound_or_default("detune1", state) >> detune_map_semitone();
+    let detune2 = params.cc_sound_or_default("detune2", state) >> detune_map_semitone();
 
     // CC: goes from 0.0 to 100 in whole steps
     let fm_ratio_an =
@@ -42,9 +46,10 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     }
     .connect_operators(state);
 
-    let morph1 =
-        (state.bent_pitch() >> osc_1a * (constant(1.0) - b1_cc.clone()) & osc_1b * b1_cc.clone());
-    let morph2 = (state.bent_pitch() >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc);
+    let morph1 = (state.bent_pitch() * detune1) >> osc_1a * (constant(1.0) - b1_cc.clone())
+        & osc_1b * b1_cc.clone();
+    let morph2 =
+        (state.bent_pitch() * detune2) >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc;
     let synth = Box::new(morph1 + morph2);
     state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
 }
@@ -83,8 +88,20 @@ static MORPH2: SoundFactory = SoundFactory {
             },
             CcParam {
                 value: ParamType::ZeroHundredFloat(7.0),
-                cc_norm_index: 0, // static value by default
+                cc_norm_index: 0,
                 name: "fm_ratio",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.5),
+                cc_norm_index: 0,
+                name: "detune1",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.5),
+                cc_norm_index: 0,
+                name: "detune2",
                 description: None,
             },
         ])),
