@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::helpers::quantize_u8_to_01;
+use crate::common::helpers::{quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
 use crate::helpers::fundsp::to_net;
 use anyhow::anyhow;
@@ -7,7 +7,7 @@ use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
 use fundsp::prelude64::{
     An, AudioUnit, Net, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, join, pass,
-    poly_saw, poly_square, pulse, sine, triangle, unit,
+    poly_saw, poly_square, pulse, sine, triangle,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -30,14 +30,6 @@ pub trait ToNet {
 }
 pub trait CcInit {
     fn get_initial_cc(&self) -> CcArray;
-}
-
-fn to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U1, U1>> {
-    unit::<U1, U1>(audiounit)
-}
-
-fn stereo_to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U2, U1>> {
-    unit::<U2, U1>(audiounit)
 }
 
 #[derive(Debug, Clone)]
