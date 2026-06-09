@@ -1,0 +1,38 @@
+[[program]]
+function = "morph2"
+name = "Agibbonprawn"
+tuning = "just intonation"
+
+[program.sound.values]
+fm_amount_2 = 0.22834645211696625
+fm_ratio = 4.5
+balance_2 = 0.3937007784843445
+osc2_a = "sine"
+osc2_b = "saw"
+detune1 = 0.5196850299835205
+osc1_a = "triangle"
+adsr = [
+    0.030000001192092896,
+    0.10000000149011612,
+    0.75,
+    0.3499999940395355,
+]
+osc1_b = "square"
+balance_1 = 0.7244094610214233
+detune2 = 0.5905511975288391
+fm_amount_1 = 0.6299212574958801
+
+[program.sound.mapping]
+fm_amount_1 = 0
+fm_amount_2 = 0
+detune1 = 3
+detune2 = 4
+
+[program.effects]
+chain = ["reverb"]
+
+[program.effects.configs.reverb.values]
+room_size = 6.0
+wet_amount = 0.5748031735420227
+damping = 0.5
+length = 2.200000047683716
