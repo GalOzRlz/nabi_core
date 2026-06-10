@@ -184,9 +184,9 @@ impl Parameterized {
     }
 
     /// Returns an ADSR envelope in a `Box` based on internal parameters.
-    pub fn boxed_adsr(&self, param_name: &str, state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    pub fn boxed_adsr(&self, adsr_param_name: &str, state: &SharedMidiState) -> Box<dyn AudioUnit> {
         let control = state.control_var();
-        if let Ok(param) = self.get_non_cc_param(param_name) {
+        if let Ok(param) = self.get_non_cc_param(adsr_param_name) {
             Box::new(
                 // todo: make into a generic struct that returns boxed audiounit
                 control
