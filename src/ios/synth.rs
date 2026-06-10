@@ -391,7 +391,7 @@ impl<const N: usize> VoiceManager<N> {
         self.mix_net.crossfade(
             self.sound_node_id,
             Fade::Smooth,
-            0.01,
+            0.1,
             Box::new(new_sound_net),
         );
     }
@@ -624,6 +624,7 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
+            // todo: re-trigger notes that didn't get an off message with a new gate
             println!("changed to patch: {}", entry.toml.name)
         }
     }
