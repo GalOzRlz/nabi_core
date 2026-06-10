@@ -9,6 +9,7 @@ use fundsp::net::Net;
 use fundsp::prelude::constant;
 use linkme::distributed_slice;
 use std::borrow::Cow;
+use std::ops::Add;
 
 pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let max_spread_hz = params
@@ -31,15 +32,14 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
     let mut summing_net = Net::new(0, 1);
     let spread_step =
         spread_hz.clone() >> cc_unidirectional_spread_step(max_spread_hz, voice_count);
-    let volume_factor = 0.9 / voice_count as f32;
 
     for num in 0..voice_count {
         let step_val = -constant(max_spread_hz) + (spread_step.clone() * num as f32);
         let new_voice = Net::pipe(
-            (state.bent_pitch() + step_val.clone() | pulse_width.clone()),
+            (state.bent_pitch().add(step_val.clone()) | pulse_width.clone()),
             to_net(osc.clone()),
         );
-        summing_net.chain(Box::new(new_voice));
+        summing_net = summing_net.add(new_voice);
     }
     let synth = Box::new(summing_net);
     state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
@@ -76,12 +76,12 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 description: None,
             },
             NonCcParam {
-                value: U8(10),
+                value: U8(8),
                 name: "voice_count",
                 description: None,
             },
             NonCcParam {
-                value: ZeroHundredFloat(50.0),
+                value: ZeroHundredFloat(5.5),
                 name: "max_spread_hz",
                 description: Some(
                     "The maximal frequency for unidirectional spreading (e.g., 20hz means between -20hz and +20hz)",

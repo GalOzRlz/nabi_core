@@ -1,7 +1,6 @@
 [[program]]
 function = "super_osc"
 name = "super tri"
-tuning = "just intonation"
 [program.effects]
 chain = ["reverb"]
 [program.effects.configs.reverb.values]

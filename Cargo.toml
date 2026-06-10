@@ -31,10 +31,6 @@ chrono = "0.4.44"
 globwalk = "0.9.1"
 petname = "3.0.0"
 
-[profile.dev]
+[profile.profiling]
+inherits = "release"
 debug = true
-opt-level = 0
-
-[profile.test]
-debug = true
-opt-level = 0
