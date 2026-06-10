@@ -33,7 +33,7 @@ fn main() -> anyhow::Result<()> {
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
         let patch_paths = gather_toml_files_recursive(&global_config.patches_path);
         let patch_table = Arc::new(create_ordered_patch_table(patch_paths, &"order.toml"));
-        start_output_thread::<6>(
+        start_output_thread::<8>(
             midi_msgs.clone(),
             patch_table.clone(),
             Option::from(global_config),
