@@ -6,7 +6,7 @@ tuning = "just intonation"
 osc1_a = "sine"
 osc2_a = "square"
 [program.effects]
-chain = ["reverb"]
+chain = []
 [program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
 room_size = 6.0
