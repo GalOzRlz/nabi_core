@@ -1,10 +1,7 @@
 [[program]]
-function = "morph2"
-name = "morph2 A"
+function = "super_osc"
+name = "super tri"
 tuning = "just intonation"
-[program.sound.configs.values]
-osc1_a = "sine"
-osc2_a = "square"
 [program.effects]
 chain = ["reverb"]
 [program.effects.configs.reverb.values]
@@ -14,7 +11,6 @@ damping   = 0.5
 length    = 2.2
 # CC‑mappable parameter: wet_amount
 wet_amount = 0.5
-## re-add eq2
 [program.effects.configs.eq2.values]
 lowcut = 0.0
 highcut = 1.0

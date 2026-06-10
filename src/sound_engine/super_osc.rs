@@ -7,7 +7,6 @@ use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
 use fundsp::prelude::constant;
-use fundsp::prelude64::panner;
 use linkme::distributed_slice;
 use std::borrow::Cow;
 
@@ -29,7 +28,7 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         }
     };
 
-    let mut summing_net = Net::new(0, 2);
+    let mut summing_net = Net::new(0, 1);
     let spread_step =
         spread_hz.clone() >> cc_unidirectional_spread_step(max_spread_hz, voice_count);
     let volume_factor = 0.9 / voice_count as f32;
@@ -40,10 +39,7 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
             (state.bent_pitch() + step_val.clone() | pulse_width.clone()),
             to_net(osc.clone()),
         );
-        summing_net = Net::sum(
-            summing_net,
-            (new_voice | step_val * (1.0 / max_spread_hz)) >> panner(),
-        ) * volume_factor;
+        summing_net = Net::sum(summing_net, new_voice) * volume_factor;
     }
     let synth = Box::new(summing_net);
     state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
@@ -65,12 +61,12 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 value: ParamType::ZeroOneFloat(0.15),
                 cc_norm_index: 1,
                 name: "detune_spread",
-                description: Some("The amount of spread detuning"),
+                description: Some("The amount of spread for voice detuning"),
             },
         ])),
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
-                value: Oscillator(Cow::Borrowed("triangle")),
+                value: Oscillator(Cow::Borrowed("saw")),
                 name: "osc",
                 description: None,
             },
@@ -87,7 +83,9 @@ static SUPER_OSC: SoundFactory = SoundFactory {
             NonCcParam {
                 value: ZeroHundredFloat(50.0),
                 name: "max_spread_hz",
-                description: None,
+                description: Some(
+                    "The maximal frequency for unidirectional spreading (e.g., 20hz means between -20hz and +20hz)",
+                ),
             },
         ])),
     },
