@@ -3,18 +3,36 @@ use crate::common::fm::FmConnector;
 use crate::common::helpers::quantize_01_decimal;
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::helpers::fundsp::to_net;
+use crate::sound_engine::common::detune_map_semitone;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
 
-// todo: add cc frequency detune control for each operator (+12/-12)
+/// Morphing Synth engine with FM capabilities.
+/// This engine is based on 2 core Oscillators, with each assigned an A oscillator and a B oscillators which can morph into each other.
+///
+/// User CC control can be assigned to:
+/// The balance of A and B (morph depth) per oscillator,
+/// Overall detuning of the oscillator (with cc: between -1 and +1 semitones, with config: any f32 value),
+/// FM amount: How much A will modulate B (0.0 to 1.0) per oscillator,
+/// FM ratio: between 0.0 and 100.0 for both oscillators.
+///
+/// Configuration can assign:
+/// A and B oscillators for each core-Oscillator,
+/// ADSR envelope for each synth voice (global).
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
-    let osc_1a = params.get_osc_node_type("osc1_a").unwrap().get_osc_node();
-    let osc_1b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
-    let osc_2a = params.get_osc_node_type("osc2_a").unwrap().get_osc_node();
-    let osc_2b = params.get_osc_node_type("osc2_b").unwrap().get_osc_node();
+    let osc1_a = params.get_osc_node_type("osc1_a").unwrap().get_osc_node();
+    let osc1_b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
+    let osc2_a = params.get_osc_node_type("osc2_a").unwrap().get_osc_node();
+    let osc2_b = params.get_osc_node_type("osc2_b").unwrap().get_osc_node();
+
+    let detune1 = params.cc_sound_or_default("detune1", state) >> detune_map_semitone();
+    let detune2 = params.cc_sound_or_default("detune2", state) >> detune_map_semitone();
+
+    let base_pitch1 = state.bent_pitch() * detune1;
+    let base_pitch2 = state.bent_pitch() * detune2;
 
     // CC: goes from 0.0 to 100 in whole steps
     let fm_ratio_an =
@@ -22,29 +40,30 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let fm_amount_1 = params.cc_sound_or_default("fm_amount_1", state) * constant(13.0);
     let fm_amount_2 = params.cc_sound_or_default("fm_amount_2", state) * constant(13.0);
 
-    let b1_cc = params.cc_sound_or_default("balance_1", state);
-    let b2_cc = params.cc_sound_or_default("balance_2", state);
+    let balance1_cc = params.cc_sound_or_default("balance_1", state);
+    let balance2_cc = params.cc_sound_or_default("balance_2", state);
 
     // The B oscillators are modulated by the A oscillators
-    let osc_1b = FmConnector {
-        modulator: osc_1a.clone(),
-        carrier: osc_1b,
+    let osc1_b = FmConnector {
+        modulator: osc1_a.clone(),
+        carrier: osc1_b,
         ratio: to_net(fm_ratio_an.clone()),
         amount: to_net(fm_amount_1),
     }
-    .connect_operators(state);
+    .connect_operators(base_pitch1.clone());
 
-    let osc_2b = FmConnector {
-        modulator: osc_2a.clone(),
-        carrier: osc_2b,
+    let osc2_b = FmConnector {
+        modulator: osc2_a.clone(),
+        carrier: osc2_b,
         ratio: to_net(fm_ratio_an),
         amount: to_net(fm_amount_2),
     }
-    .connect_operators(state);
+    .connect_operators(base_pitch2.clone());
 
-    let morph1 =
-        (state.bent_pitch() >> osc_1a * (constant(1.0) - b1_cc.clone()) & osc_1b * b1_cc.clone());
-    let morph2 = (state.bent_pitch() >> osc_2a * (constant(1.0) - b2_cc.clone()) & osc_2b * b2_cc);
+    let morph1 = base_pitch1 >> osc1_a * (constant(1.0) - balance1_cc.clone())
+        & osc1_b * balance1_cc.clone();
+    let morph2 =
+        base_pitch2 >> osc2_a * (constant(1.0) - balance2_cc.clone()) & osc2_b * balance2_cc;
     let synth = Box::new(morph1 + morph2);
     state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
 }
@@ -60,7 +79,7 @@ static MORPH2: SoundFactory = SoundFactory {
                 cc_norm_index: 1,
                 name: "balance_1",
                 description: Some(
-                    "The morphing depth of Oscillator1: moves between osc_1a and osc_1b",
+                    "The morphing depth of Oscillator1: moves between osc1_a and osc1_b",
                 ),
             },
             CcParam {
@@ -83,8 +102,20 @@ static MORPH2: SoundFactory = SoundFactory {
             },
             CcParam {
                 value: ParamType::ZeroHundredFloat(7.0),
-                cc_norm_index: 0, // static value by default
+                cc_norm_index: 0,
                 name: "fm_ratio",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.5),
+                cc_norm_index: 0,
+                name: "detune1",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.5),
+                cc_norm_index: 0,
+                name: "detune2",
                 description: None,
             },
         ])),

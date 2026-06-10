@@ -52,6 +52,10 @@ impl SoundFactory {
     pub fn build_synth(&self) -> SynthFunc {
         let function = self.builder.clone();
         let config = self.params.clone();
-        Arc::new(move |state: &SharedMidiState| -> Box<dyn AudioUnit> { function(state, &config) })
+        Arc::new(move |state: &SharedMidiState| -> Box<dyn AudioUnit> {
+            let mut unit = function(state, &config);
+            unit.allocate();
+            unit
+        })
     }
 }

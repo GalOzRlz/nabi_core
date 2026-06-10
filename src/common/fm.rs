@@ -1,4 +1,3 @@
-use crate::SharedMidiState;
 use fundsp::audiounit::{AudioUnit, Unit};
 use fundsp::combinator::An;
 use fundsp::net::Net;
@@ -18,11 +17,11 @@ impl FmConnector {
         modulator_env: Box<dyn AudioUnit>,
         carrier_env: Option<Box<dyn AudioUnit>>,
     ) -> FmConnector {
-        todo!("add envelopes to carrier and modulator")
+        todo!("add envelopes to carrier and modulator - for the Sega sim")
     }
-    pub fn connect_operators(self, state: &SharedMidiState) -> Net {
-        let modulator = (state.bent_pitch() * self.ratio) >> self.modulator.clone();
-        modulator * (state.bent_pitch() * self.amount.clone()) + state.bent_pitch()
-            >> self.carrier.clone()
+
+    pub fn connect_operators(self, base_pitch: Net) -> Net {
+        let modulator = (base_pitch.clone() * self.ratio) >> self.modulator.clone();
+        modulator * (base_pitch.clone() * self.amount.clone()) + base_pitch >> self.carrier.clone()
     }
 }
