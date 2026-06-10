@@ -401,7 +401,7 @@ impl<const N: usize> VoiceManager<N> {
         let entry = &self.patch_table.entries[self.current_patch_num].effects;
         let new_fx_net = entry.clone().build_chain(&self.states[0]);
         self.mix_net
-            .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
+            .crossfade(self.fx_node_id, Fade::Smooth, 0.1, Box::new(new_fx_net));
     }
 
     /// Commit patch Net changes (sound rebuilt, effects chain rebuild, etc.)
