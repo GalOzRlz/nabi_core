@@ -127,7 +127,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let buffer_size = match buffer_size_range {
             // If the device reports a min/max range, pick a value in between
             SupportedBufferSize::Range { min, max } => {
-                let target = 442; // todo: make it configurable?
+                let target = 390; // todo: make it configurable?
                 // Clamp the target to the valid range [min, max]
                 let chosen = target.clamp(*min, *max);
                 println!(
