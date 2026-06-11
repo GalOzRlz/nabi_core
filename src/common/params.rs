@@ -444,7 +444,9 @@ impl OscillatorType {
                 stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node()))
             }
             OscillatorType::None => stereo_to_mono_unit(Box::new(pw_sinker >> sine() * 0.0)),
-            _ => panic!("Type cannot accept any inputs - therefore cannot force it to receive "),
+            OscillatorType::WaveTable(s) => {
+                stereo_to_mono_unit(Box::new(pw_sinker >> *Self::wavetable_synth_from_path(&s)))
+            }
         }
     }
 }

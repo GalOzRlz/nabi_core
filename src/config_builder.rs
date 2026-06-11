@@ -13,11 +13,8 @@ use toml::Value;
 // ---------- dynamic knob sizing ----------
 pub const MAX_KNOBS_PER_GROUP: usize = 16;
 
-fn default_fx_cc_vals() -> Vec<u8> {
-    vec![74, 71, 76, 77]
-}
-fn default_sound_cc_vals() -> Vec<u8> {
-    vec![80, 81, 82, 83]
+fn default_null_cc_vals() -> Vec<u8> {
+    vec![0, 0, 0, 0]
 }
 
 // ---------- voice management enums ----------
@@ -51,8 +48,8 @@ impl Default for GlobalConfig {
         Self {
             voice_stealing: VoiceStealingConfig::LegatoLast,
             voice_release: FreeVoiceStrategy::FollowADSR,
-            sound_cc_mapping: default_sound_cc_vals(),
-            fx_cc_mapping: default_fx_cc_vals(),
+            sound_cc_mapping: default_null_cc_vals(),
+            fx_cc_mapping: default_null_cc_vals(),
             patches_path: {
                 let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                 path.push("patches".to_string());
