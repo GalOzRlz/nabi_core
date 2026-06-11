@@ -2,7 +2,7 @@
 function = "morph2"
 name = "morph2 A"
 tuning = "just intonation"
-[program.sound.configs.values]
+[program.sound.values]
 osc1_a = "sine"
 osc2_a = "square"
 [program.effects]
