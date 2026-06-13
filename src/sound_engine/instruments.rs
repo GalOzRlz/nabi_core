@@ -141,7 +141,7 @@ impl CombPluck {
     }
 
     /// Process one sample through the comb filter.
-    fn process_comb(&mut self, excitation: f32) -> Frame<f32, typenum::U1> {
+    fn process_comb(&mut self, excitation: f32) -> Frame<f32, Self::Outputs> {
         if self.buffer.is_empty() {
             return [0.0].into();
         }
@@ -174,12 +174,12 @@ impl CombPluck {
         if self.read_pos_f >= self.max_delay_samples as f32 {
             self.read_pos_f -= self.max_delay_samples as f32;
         }
-        [output as f32].into()
+        [output].into()
     }
 }
 
 impl AudioNode for CombPluck {
-    const ID: u64 = 67;
+    const ID: u64 = 667;
     type Inputs = typenum::U3;
     type Outputs = typenum::U1;
 
