@@ -141,7 +141,7 @@ impl CombPluck {
     }
 
     /// Process one sample through the comb filter.
-    fn process_comb(&mut self, excitation: f32) -> Frame<f32, Self::Outputs> {
+    fn process_comb(&mut self, excitation: f32) -> Frame<f32, typenum::U1> {
         if self.buffer.is_empty() {
             return [0.0].into();
         }
