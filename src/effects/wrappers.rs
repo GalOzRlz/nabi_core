@@ -25,7 +25,7 @@ type GenericStereoToN<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Syn
 /// ( pass() | pass() | cc_1 | cc_2 |cc_3 | cc_4) >> full_cc_reverb
 /// ```
 #[derive(Clone)]
-struct StereoFXStaticParamsWrapper<const N: usize> {
+pub struct StereoFXStaticParamsWrapper<const N: usize> {
     inner: GenericStereoToN<N>,
     effect: Net,
     params_state: [f32; N],
