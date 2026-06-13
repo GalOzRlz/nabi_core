@@ -150,3 +150,20 @@ fn inner_start_output_thread<const N: usize>(
         player.run_output(relay_in).unwrap();
     });
 }
+
+#[cfg(target_os = "linux")]
+pub fn set_realtime_priority() {
+    unsafe {
+        let param = libc::sched_param { sched_priority: 50 };
+        let ret = libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+        if ret != 0 {
+            eprintln!(
+                "Warning: failed to set real-time priority: {} (are you root or have CAP_SYS_NICE?)",
+                std::io::Error::last_os_error()
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn set_realtime_priority() {}

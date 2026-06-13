@@ -5,6 +5,7 @@ use crate::config_builder::{
 use crate::effects::master_fx::master_limiter;
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent};
+use crate::ios::threads::set_realtime_priority;
 use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
@@ -193,6 +194,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             .build_output_stream(
                 *config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                    set_realtime_priority();
                     write_data_block(data, channels, block_size, &mut next_block);
                 },
                 err_fn,
