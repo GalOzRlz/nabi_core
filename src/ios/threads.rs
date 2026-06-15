@@ -9,6 +9,7 @@ use midi_msg::ControlChange::CC;
 use midi_msg::{ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{MidiInput, MidiInputPort};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::thread::{JoinHandle, sleep};
 use std::time::Duration;
@@ -170,28 +171,33 @@ pub fn get_first_input_port(midi_in: &mut MidiInput) -> MidiInputPort {
 
 pub fn cc_mapper_handler(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
-    quit: Arc<AtomicCell<bool>>,
-) -> JoinHandle<Option<u8>> {
+    data_tx: Sender<Option<u8>>,
+    stop_rx: Receiver<Option<()>>,
+) -> JoinHandle<()> {
     let mut cc_val: Option<u8> = None;
     let handler = thread::spawn(move || {
-        while !quit.load() {
-            let midi_msg = midi_msgs.pop()?;
-            match midi_msg.msg {
-                MidiMsg::ChannelVoice { channel: _, msg } => match msg {
-                    ChannelVoiceMsg::ControlChange {
-                        control:
-                            CC {
-                                control,
-                                value: _value,
-                            },
-                    } => cc_val = Some(control),
+        loop {
+            if let Ok(_) = stop_rx.try_recv() {
+                let _ = data_tx.send(cc_val);
+                return;
+            }
+            if let Some(midi_msg) = midi_msgs.pop() {
+                match midi_msg.msg {
+                    MidiMsg::ChannelVoice { channel: _, msg } => match msg {
+                        ChannelVoiceMsg::ControlChange {
+                            control:
+                                CC {
+                                    control,
+                                    value: _value,
+                                },
+                        } => cc_val = Some(control),
+                        _ => {}
+                    },
                     _ => {}
-                },
-                _ => {}
+                }
             }
             sleep(Duration::from_millis(10));
         }
-        return cc_val;
     });
     handler
 }
