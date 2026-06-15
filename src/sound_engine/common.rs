@@ -30,7 +30,7 @@ pub(crate) fn detune_map_semitone() -> An<Map<fn(&Frame<f32, U1>) -> f32, U1, f3
 /// Step count signifies the amount of steps between negative pole and positive pole.
 pub(crate) fn cc_unidirectional_spread_step(max_hz: f32, step_count: u8) -> An<Unit<U1, U1>> {
     let mapper = Box::new(map(move |cc_net: &Frame<f32, U1>| {
-        ((cc_net[0] * max_hz * 2.0) / step_count as f32)
+        (cc_net[0] * max_hz * 2.0) / step_count as f32
     }));
     to_mono_unit(mapper)
 }

@@ -5,12 +5,10 @@ use nabi_core::config_builder::{
     create_ordered_patch_table, gather_toml_files_recursive, load_global_config,
 };
 use nabi_core::ios::synth::SynthMsg;
-use nabi_core::ios::threads::{start_input_thread, start_output_thread};
+use nabi_core::ios::threads::{get_first_input_port, start_input_thread, start_output_thread};
 use nabi_core::patch_builder::PatchTable;
-use nabi_core::tui::{console_choice_from, get_first_midi_device};
+use nabi_core::tui::console_choice_from;
 use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
     let reset = Arc::new(AtomicCell::new(false));
@@ -18,16 +16,7 @@ fn main() -> anyhow::Result<()> {
     while !quit {
         let global_config = load_global_config("config/global.toml");
         let mut midi_in = MidiInput::new("midir reading input")?;
-        let in_port = loop {
-            match get_first_midi_device(&mut midi_in) {
-                Ok(port) => break port, // exit loop, returning `port`
-                Err(_) => {
-                    println!("waiting for midi input device..");
-                    sleep(Duration::from_millis(1200));
-                }
-            }
-        };
-
+        let in_port = get_first_input_port(&mut midi_in);
         let midi_msgs = Arc::new(SegQueue::new());
         while reset.load() {}
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
