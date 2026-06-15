@@ -1,6 +1,7 @@
 use crate::common::params::CcInit;
 use crate::config_builder::{
     ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, VoiceStealingConfig,
+    build_patch_table,
 };
 use crate::effects::master_fx::master_limiter;
 pub use crate::ios::midi::SynthMsg;
@@ -352,19 +353,26 @@ impl<const N: usize> VoiceManager<N> {
         let new_vec = vec![new_toml];
         ProgramsFile::new(new_vec)
     }
-    pub fn save_patch_state(&self) {
+    pub fn save_patch_state(&mut self) {
         let toml = self.patch_state_to_toml();
         let new_file_name = format!(
             "{}-{}.toml",
             self.get_current_patch().toml.name,
             Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
         );
-        let new_toml =
+        let new_toml_str =
             toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
         let mut path_copy = self.config.patches_path.clone();
         path_copy.push(new_file_name);
-        fs::write(path_copy, new_toml).expect("failed to save patch state to TOML");
+        fs::write(path_copy, new_toml_str).expect("failed to save patch state to TOML");
+        let new_patch = build_patch_table(&toml.program);
+        self.current_patch_num += 1;
+        // todo: also update order.toml? generate it on the fly if missing?
+        Arc::make_mut(&mut self.patch_table)
+            .entries
+            .insert(self.current_patch_num, new_patch.entries[0].clone());
     }
+
     pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
         match event {
             PatchButtonEvent::ChangeProgram(offset) => {
