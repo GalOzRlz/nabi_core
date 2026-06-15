@@ -179,9 +179,9 @@ impl ProgramsFile {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct TomlOrderConfig {
-    patch_order: Vec<String>,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TomlOrderConfig {
+    pub(crate) patch_order: Vec<String>,
 }
 
 fn load_patch_file(path_buf: &PathBuf) -> Result<Vec<TomlPatchDef>, Box<dyn std::error::Error>> {

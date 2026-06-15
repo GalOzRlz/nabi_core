@@ -1,7 +1,7 @@
 use crate::common::params::CcInit;
 use crate::config_builder::{
-    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, VoiceStealingConfig,
-    build_patch_table,
+    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, TomlOrderConfig,
+    VoiceStealingConfig, build_patch_table,
 };
 use crate::effects::master_fx::master_limiter;
 pub use crate::ios::midi::SynthMsg;
@@ -32,6 +32,7 @@ use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 struct AudioBuffers {
@@ -352,17 +353,27 @@ impl<const N: usize> VoiceManager<N> {
             self.get_current_patch().toml.name,
             Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
         );
-        let new_toml_str =
+        let new_patch_toml_str =
             toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
-        let mut path_copy = self.config.patches_path.clone();
-        path_copy.push(new_file_name);
-        fs::write(path_copy, new_toml_str).expect("failed to save patch state to TOML");
+        let mut patches_path = self.config.patches_path.clone();
+        patches_path.push(new_file_name);
         let new_patch = build_patch_table(&toml.program);
         self.current_patch_num += 1;
-        // todo: also update order.toml? generate it on the fly if missing?
         Arc::make_mut(&mut self.patch_table)
             .entries
             .insert(self.current_patch_num, new_patch.entries[0].clone());
+        let mut new_order_vec: Vec<String> = Vec::with_capacity(self.patch_table.entries.len());
+        for entry in &self.patch_table.entries {
+            new_order_vec.push(entry.toml.name.clone())
+        }
+        let toml_order_config = toml::to_string_pretty(&TomlOrderConfig {
+            patch_order: new_order_vec,
+        })
+        .expect("failed to serialize Ordering to string from TOML");
+        let mut ordering_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        ordering_path.push("config/order.toml");
+        fs::write(ordering_path, toml_order_config).expect("failed to write Order state to TOML");
+        fs::write(patches_path, new_patch_toml_str).expect("failed to write patch state to TOML");
     }
 
     pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
