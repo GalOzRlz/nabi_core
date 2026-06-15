@@ -28,7 +28,7 @@ fn main() -> anyhow::Result<()> {
         println!(
             "Press Enter to finalize. If no control was activated we will continue to Left-Right mapping..."
         );
-        if let Some(num) = handle_cc_events_mapper(midi_msgs.clone()) {
+        if let Some(num) = handle_midi_mapper_util(midi_msgs.clone()) {
             fx_cc.push(num);
             println!("Current FX mapping: {:?}", fx_cc);
         } else {
@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
         println!(
             "Press Enter to finalize. If no control was activated we will conclude the mapping utility and continue to write to config file"
         );
-        if let Some(num) = handle_cc_events_mapper(midi_msgs.clone()) {
+        if let Some(num) = handle_midi_mapper_util(midi_msgs.clone()) {
             sound_cc.push(num);
             println!("Current SOUND mapping: {:?}", sound_cc);
         } else {
@@ -52,12 +52,12 @@ fn main() -> anyhow::Result<()> {
         }
     }
     println!("Press your controllers LEFT button and then Enter...");
-    if let Some(num) = handle_cc_events_mapper(midi_msgs.clone()) {
+    if let Some(num) = handle_midi_mapper_util(midi_msgs.clone()) {
         left_right[0] = num;
         println!("LEFT mapping: {:?}", num);
     }
     println!("Press your controllers RIGHT button and then Enter...");
-    if let Some(num) = handle_cc_events_mapper(midi_msgs.clone()) {
+    if let Some(num) = handle_midi_mapper_util(midi_msgs.clone()) {
         left_right[1] = num;
         println!("RIGHT mapping: {:?}", num);
     }
@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_cc_events_mapper(midi_msgs: Arc<SegQueue<SynthMsg>>) -> Option<u8> {
+fn handle_midi_mapper_util(midi_msgs: Arc<SegQueue<SynthMsg>>) -> Option<u8> {
     let mut dummy_string = String::new();
     let (data_tx, data_rx) = mpsc::channel();
     let (stop_tx, stop_rx) = mpsc::channel();
