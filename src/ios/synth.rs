@@ -5,7 +5,7 @@ use crate::config_builder::{
 };
 use crate::effects::master_fx::master_limiter;
 pub use crate::ios::midi::SynthMsg;
-use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent};
+use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
 use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
@@ -31,7 +31,6 @@ use fundsp::{
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::fs;
 use std::sync::Arc;
 
@@ -122,7 +121,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             .ok_or(anyhow!("failed to find a default output device"))?;
         let default_config = device.default_output_config().expect("No default config");
 
-        // 2. Query the device's supported buffer size range
         let buffer_size_range = default_config.buffer_size();
 
         let buffer_size = match buffer_size_range {
@@ -144,7 +142,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             }
         };
 
-        // 4. Build your final stream configuration
         let config = StreamConfig {
             channels: default_config.channels(),
             sample_rate: default_config.sample_rate(),
@@ -229,11 +226,6 @@ pub fn write_data_block<T: Sample + FromSample<f32>>(
         }
         frames_written += frames_to_gen;
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum RelayedMessage {
-    SystemReset,
 }
 
 /// Single sound emitter that decodes midi and manages voices - used by SynthPlayer and LRPlayer to manage output.
@@ -570,7 +562,7 @@ impl<const N: usize> VoiceManager<N> {
         self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
-        //println!("recent pitches: {:?}", self.recent_pitches);
+        println!("recent pitches: {:?}", self.recent_pitches);
     }
 
     fn off(&mut self, pitch: u8) {
@@ -584,7 +576,7 @@ impl<const N: usize> VoiceManager<N> {
     fn change_patch_with_offset(&mut self, offset: i32) {
         let len = self.patch_table.entries.len();
         if len == 0 {
-            return; // No patches, nothing to do
+            return;
         }
         // Use modulo arithmetic for wrap-around
         let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
@@ -594,7 +586,6 @@ impl<const N: usize> VoiceManager<N> {
     fn apply_init_cc_vals(&mut self) {
         let table = self.patch_table.clone();
         if let Some(entry) = table.entries.get(self.current_patch_num) {
-            // 1. Apply effect initial CCs to effect knobs
             for (i, &val) in entry.effects.get_initial_cc().iter().enumerate() {
                 if i < self.states[0].fx_cc_vals.len() {
                     for state in self.states.iter_mut() {
