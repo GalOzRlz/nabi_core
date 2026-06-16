@@ -552,7 +552,7 @@ impl<const N: usize> VoiceManager<N> {
                                 }
                                 if let Some(cc_name) =
                                     // logical is usize+1
-                                    current.effects.chain_param_from_cc_index(idx + 1)
+                                    current.sound_factory.params.param_from_cc_index(idx + 1)
                                 {
                                     cc_line = format!(
                                         "{} {}",
@@ -567,7 +567,7 @@ impl<const N: usize> VoiceManager<N> {
                                 }
                                 if let Some(cc_name) =
                                     // logical is usize+1
-                                    current.sound_factory.params.param_from_cc_index(idx + 1)
+                                    current.effects.chain_param_from_cc_index(idx + 1)
                                 {
                                     cc_line = format!(
                                         "{} {}%",
