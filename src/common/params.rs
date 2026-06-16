@@ -166,6 +166,13 @@ impl CcInit for Parameterized {
 }
 
 impl Parameterized {
+    pub fn param_from_cc_index(&self, idx: usize) -> Option<&CcParam> {
+        if let Some(cc_params) = self.cc_params.as_ref() {
+            return cc_params.iter().find(|p| p.cc_norm_index == idx);
+        }
+        None
+    }
+
     pub fn apply_toml_overrides<T>(&mut self, toml_config: &T)
     where
         T: ConfigurableMapping,
