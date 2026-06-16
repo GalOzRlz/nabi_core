@@ -4,6 +4,7 @@ use crate::config_builder::{
     VoiceStealingConfig, build_patch_table,
 };
 use crate::effects::master_fx::master_limiter;
+use crate::ios::display::{KeyboardDisplay, shorten_cc_name};
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
 use crate::patch_builder::{KnobGroup, PatchDef};
@@ -34,6 +35,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
 struct AudioBuffers {
     output: BufferVec,
@@ -106,13 +109,17 @@ pub struct SynthPlayer<const N: usize> {
 impl<const N: usize> Synth<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
         let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
-        Self {
+        let mut s = Self {
             voice_manager,
             buffers: AudioBuffers {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
             },
-        }
+        };
+        s.voice_manager
+            .update_screen(&patch_table.clone().entries[0].toml.name, "")
+            .unwrap();
+        s
     }
 
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
@@ -230,7 +237,7 @@ pub fn write_data_block<T: Sample + FromSample<f32>>(
 }
 
 /// Single sound emitter that decodes midi and manages voices - used by SynthPlayer and LRPlayer to manage output.
-#[derive(Clone)]
+//#[derive(Clone)]
 struct VoiceManager<const N: usize> {
     states: [SharedMidiState; N],
     next: ModNumC<usize, N>,
@@ -244,13 +251,14 @@ struct VoiceManager<const N: usize> {
     sound_node_id: NodeId,
     mix_net: Net,
     current_patch_num: usize,
-    cc_to_logical_num: HashMap<u8, (KnobGroup, usize)>,
+    cc_to_usize_index: HashMap<u8, (KnobGroup, usize)>,
     button_event_processor: ButtonEventProcessor,
+    keyboard_display: Option<KeyboardDisplay>,
 }
 
 impl<const N: usize> VoiceManager<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
-        let cc_to_logical_num = Self::get_cc_map(&config);
+        let cc_to_usize_index = Self::get_cc_map(&config);
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build_synth();
         let fx_cc_array = &first_table.effects.get_initial_cc();
@@ -272,7 +280,8 @@ impl<const N: usize> VoiceManager<N> {
         let fx_node_id = master_fx_net.chain(Box::new(
             first_table.effects.clone().build_chain(&states[0]),
         ));
-        Self {
+        let keyboard_display = KeyboardDisplay::try_new();
+        let mut s = Self {
             states,
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
@@ -281,7 +290,7 @@ impl<const N: usize> VoiceManager<N> {
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
-            cc_to_logical_num,
+            cc_to_usize_index,
             current_patch_num: 0,
             fx_node_id,
             mix_net: Net::new(2, 2),
@@ -291,8 +300,33 @@ impl<const N: usize> VoiceManager<N> {
                 None,
                 None,
             ),
-        }
+            keyboard_display,
+        };
+        s.clear_screen().unwrap();
+        s.update_screen("NABI Synth", "").unwrap();
+        sleep(Duration::from_millis(200));
+        s
     }
+
+    fn update_screen(
+        &mut self,
+        line1: &str,
+        line2: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut d) = self.keyboard_display {
+            d.set_text(line1, line2)?;
+            //sleep(Duration::from_millis(50));
+        }
+        Ok(())
+    }
+
+    fn clear_screen(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut d) = self.keyboard_display {
+            d.clear_screen()?;
+        }
+        Ok(())
+    }
+
     pub fn get_current_patch(&self) -> &PatchDef {
         &self.patch_table.entries[self.current_patch_num]
     }
@@ -421,15 +455,15 @@ impl<const N: usize> VoiceManager<N> {
     }
 
     fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
-        let mut cc_to_logical_num = HashMap::new();
+        let mut cc_to_usize_index = HashMap::new();
         for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Sound, i));
+            cc_to_usize_index.insert(cc, (KnobGroup::Sound, i));
         }
         for (i, &cc) in config.fx_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Effect, i));
+            cc_to_usize_index.insert(cc, (KnobGroup::Effect, i));
         }
-        println!("{:?}", cc_to_logical_num);
-        cc_to_logical_num
+        println!("{:?}", cc_to_usize_index);
+        cc_to_usize_index
     }
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         for i in 0..self.states.len() {
@@ -508,20 +542,45 @@ impl<const N: usize> VoiceManager<N> {
                 } => {
                     //eprintln!("Control change from {:?} to {:?}", control, value);
                     // quantized to 0.0-1.0 with 0.01 steps:
-                    if let Some(&(group, idx)) = self.cc_to_logical_num.get(control) {
+                    if let Some(&(group, idx)) = self.cc_to_usize_index.get(control) {
                         let norm = *value as f32 / 127.0;
+                        let current = self.get_current_patch().clone();
+                        let mut cc_line = "".to_string();
                         match group {
                             KnobGroup::Sound => {
                                 for state in self.states.iter_mut() {
                                     state.sound_cc_vals[idx].set_value(norm);
                                 }
+                                if let Some(cc_name) =
+                                    // logical is usize+1
+                                    current.sound_factory.params.param_from_cc_index(idx + 1)
+                                {
+                                    cc_line = format!(
+                                        "{} {}",
+                                        cc_name.name.replace("_", " "),
+                                        (norm * 100.0).round()
+                                    );
+                                };
                             }
                             KnobGroup::Effect => {
                                 for state in self.states.iter_mut() {
                                     state.fx_cc_vals[idx].set_value(norm);
                                 }
+                                if let Some((fx_name, cc)) =
+                                    // logical is usize+1
+                                    current.effects.fx_and_param_from_index(idx + 1)
+                                {
+                                    cc_line = format!(
+                                        "{} {} {}%",
+                                        fx_name.to_uppercase(),
+                                        shorten_cc_name(cc.name),
+                                        (norm * 100.0).round()
+                                    )
+                                };
                             }
                         }
+                        self.update_screen(&current.toml.name, &cc_line)
+                            .expect("Failed to update screen");
                     } else {
                         let event = self.button_event_processor.process_event(control, value);
                         self.handle_button_event(event);
@@ -634,7 +693,8 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
-            println!("changed to patch: {}", entry.toml.name)
+            self.update_screen(&entry.toml.name, "").unwrap();
+            //println!("changed to patch: {}", entry.toml.name)
         }
     }
 

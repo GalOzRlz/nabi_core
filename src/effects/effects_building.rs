@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::params::{CcInit, Parameterized};
+use crate::common::params::{CcInit, CcParam, Parameterized};
 use crate::config_builder::{MAX_KNOBS_PER_GROUP, TomlEffectSection};
 use crate::effects::helpers::to_stereo;
 use fundsp::prelude64::{Net, NodeId};
@@ -61,6 +61,17 @@ impl CcInit for FxChainFactory {
 }
 
 impl FxChainFactory {
+    pub fn fx_and_param_from_index(&self, idx: usize) -> Option<(&str, &CcParam)> {
+        if let Some(definitions) = &self.definitions {
+            for def in definitions.iter().filter(|x| x.cc_params.is_some()) {
+                if let Some(x) = def.param_from_cc_index(idx) {
+                    return Some((def.name, x));
+                }
+            }
+        }
+        None
+    }
+
     pub fn connect_node_vec(&mut self, node_vec: Arc<Vec<Net>>) -> Net {
         let mut nodeid_vec: Vec<NodeId> = Vec::with_capacity(node_vec.len());
         let mut net = Net::new(2, 2);
