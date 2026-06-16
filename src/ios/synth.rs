@@ -251,14 +251,14 @@ struct VoiceManager<const N: usize> {
     sound_node_id: NodeId,
     mix_net: Net,
     current_patch_num: usize,
-    cc_to_logical_num: HashMap<u8, (KnobGroup, usize)>,
+    cc_to_usize_index: HashMap<u8, (KnobGroup, usize)>,
     button_event_processor: ButtonEventProcessor,
     keyboard_display: Option<KeyboardDisplay>,
 }
 
 impl<const N: usize> VoiceManager<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
-        let cc_to_logical_num = Self::get_cc_map(&config);
+        let cc_to_usize_index = Self::get_cc_map(&config);
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build_synth();
         let fx_cc_array = &first_table.effects.get_initial_cc();
@@ -290,7 +290,7 @@ impl<const N: usize> VoiceManager<N> {
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
-            cc_to_logical_num,
+            cc_to_usize_index,
             current_patch_num: 0,
             fx_node_id,
             mix_net: Net::new(2, 2),
@@ -454,15 +454,15 @@ impl<const N: usize> VoiceManager<N> {
     }
 
     fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
-        let mut cc_to_logical_num = HashMap::new();
+        let mut cc_to_usize_index = HashMap::new();
         for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Sound, i));
+            cc_to_usize_index.insert(cc, (KnobGroup::Sound, i));
         }
         for (i, &cc) in config.fx_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Effect, i));
+            cc_to_usize_index.insert(cc, (KnobGroup::Effect, i));
         }
-        println!("{:?}", cc_to_logical_num);
-        cc_to_logical_num
+        println!("{:?}", cc_to_usize_index);
+        cc_to_usize_index
     }
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         for i in 0..self.states.len() {
@@ -541,7 +541,7 @@ impl<const N: usize> VoiceManager<N> {
                 } => {
                     //eprintln!("Control change from {:?} to {:?}", control, value);
                     // quantized to 0.0-1.0 with 0.01 steps:
-                    if let Some(&(group, idx)) = self.cc_to_logical_num.get(control) {
+                    if let Some(&(group, idx)) = self.cc_to_usize_index.get(control) {
                         let norm = *value as f32 / 127.0;
                         let current = self.get_current_patch().clone();
                         let mut cc_line = "".to_string();
@@ -549,24 +549,32 @@ impl<const N: usize> VoiceManager<N> {
                             KnobGroup::Sound => {
                                 for state in self.states.iter_mut() {
                                     state.sound_cc_vals[idx].set_value(norm);
-                                    if let Some(cc_name) =
-                                        current.effects.chain_param_from_cc_index(idx)
-                                    {
-                                        cc_line =
-                                            format!("{} {}", cc_name.name, (norm * 100.0).round());
-                                    };
                                 }
+                                if let Some(cc_name) =
+                                    // logical is usize+1
+                                    current.effects.chain_param_from_cc_index(idx + 1)
+                                {
+                                    cc_line = format!(
+                                        "{} {}",
+                                        cc_name.name.replace("_", " "),
+                                        (norm * 100.0).round()
+                                    );
+                                };
                             }
                             KnobGroup::Effect => {
                                 for state in self.states.iter_mut() {
                                     state.fx_cc_vals[idx].set_value(norm);
-                                    if let Some(cc_name) =
-                                        current.sound_factory.params.param_from_cc_index(idx)
-                                    {
-                                        cc_line =
-                                            format!("{} {}%", cc_name.name, (norm * 100.0).round())
-                                    };
                                 }
+                                if let Some(cc_name) =
+                                    // logical is usize+1
+                                    current.sound_factory.params.param_from_cc_index(idx + 1)
+                                {
+                                    cc_line = format!(
+                                        "{} {}%",
+                                        cc_name.name.replace("_", " "),
+                                        (norm * 100.0).round()
+                                    )
+                                };
                             }
                         }
                         self.update_screen(&current.toml.name, &cc_line)
