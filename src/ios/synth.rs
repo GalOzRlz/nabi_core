@@ -4,6 +4,7 @@ use crate::config_builder::{
     VoiceStealingConfig, build_patch_table,
 };
 use crate::effects::master_fx::master_limiter;
+use crate::ios::display::KeyboardDisplay;
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
 use crate::patch_builder::{KnobGroup, PatchDef};
@@ -230,7 +231,7 @@ pub fn write_data_block<T: Sample + FromSample<f32>>(
 }
 
 /// Single sound emitter that decodes midi and manages voices - used by SynthPlayer and LRPlayer to manage output.
-#[derive(Clone)]
+//#[derive(Clone)]
 struct VoiceManager<const N: usize> {
     states: [SharedMidiState; N],
     next: ModNumC<usize, N>,
@@ -246,6 +247,7 @@ struct VoiceManager<const N: usize> {
     current_patch_num: usize,
     cc_to_logical_num: HashMap<u8, (KnobGroup, usize)>,
     button_event_processor: ButtonEventProcessor,
+    keyboard_display: Option<KeyboardDisplay>,
 }
 
 impl<const N: usize> VoiceManager<N> {
@@ -272,7 +274,8 @@ impl<const N: usize> VoiceManager<N> {
         let fx_node_id = master_fx_net.chain(Box::new(
             first_table.effects.clone().build_chain(&states[0]),
         ));
-        Self {
+        let keyboard_display = KeyboardDisplay::try_new();
+        let mut s = Self {
             states,
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
@@ -291,8 +294,32 @@ impl<const N: usize> VoiceManager<N> {
                 None,
                 None,
             ),
-        }
+            keyboard_display,
+        };
+        s.clear_screen().unwrap();
+        s.update_screen(&first_table.toml.name, "").unwrap();
+        s
     }
+
+    fn update_screen(
+        &mut self,
+        line1: &str,
+        line2: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut d) = self.keyboard_display {
+            println!("Updating screen with {} {}", line1, line2);
+            d.set_text(line1, line2)?;
+        }
+        Ok(())
+    }
+
+    fn clear_screen(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut d) = self.keyboard_display {
+            d.clear_screen()?;
+        }
+        Ok(())
+    }
+
     pub fn get_current_patch(&self) -> &PatchDef {
         &self.patch_table.entries[self.current_patch_num]
     }
