@@ -4,7 +4,7 @@ use crate::config_builder::{
     VoiceStealingConfig, build_patch_table,
 };
 use crate::effects::master_fx::master_limiter;
-use crate::ios::display::KeyboardDisplay;
+use crate::ios::display::{KeyboardDisplay, shorten_cc_name};
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
 use crate::patch_builder::{KnobGroup, PatchDef};
@@ -573,7 +573,7 @@ impl<const N: usize> VoiceManager<N> {
                                     cc_line = format!(
                                         "{} {} {}%",
                                         fx_name.to_uppercase(),
-                                        cc.name.replace("_", " "),
+                                        shorten_cc_name(cc.name),
                                         (norm * 100.0).round()
                                     )
                                 };
