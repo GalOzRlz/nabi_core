@@ -18,14 +18,14 @@ fn default_null_cc_vals() -> Vec<u8> {
 }
 
 // ---------- voice management enums ----------
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum VoiceStealingConfig {
     LegatoOldest,
     LegatoLast,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum FreeVoiceStrategy {
     FollowADSR,
@@ -61,19 +61,19 @@ impl Default for GlobalConfig {
 }
 
 // ---------- TOML structures for midi.toml ----------
-#[derive(Deserialize)]
-struct GlobalConfigToml {
+#[derive(Deserialize, Serialize)]
+pub struct GlobalConfigToml {
     #[serde(default)]
-    global: GlobalSection,
+    pub global: GlobalSection,
 }
 
-#[derive(Deserialize, Default)]
-struct GlobalSection {
+#[derive(Deserialize, Default, Serialize)]
+pub struct GlobalSection {
     #[serde(default)]
-    sound_cc_mapping: Option<Vec<u8>>,
+    pub sound_cc_mapping: Option<Vec<u8>>,
 
     #[serde(default)]
-    fx_cc_mapping: Option<Vec<u8>>,
+    pub fx_cc_mapping: Option<Vec<u8>>,
 
     #[serde(default)]
     synth_stealing: Option<VoiceStealingConfig>,
@@ -85,7 +85,7 @@ struct GlobalSection {
     patches_path: Option<PathBuf>,
 
     #[serde(default)]
-    left_right_buttons: Option<[u8; 2]>,
+    pub left_right_buttons: Option<[u8; 2]>,
 }
 
 pub fn load_global_config(path: &str) -> GlobalConfig {
@@ -176,9 +176,9 @@ impl ProgramsFile {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct TomlOrderConfig {
-    patch_order: Vec<String>,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TomlOrderConfig {
+    pub(crate) patch_order: Vec<String>,
 }
 
 fn load_patch_file(path_buf: &PathBuf) -> Result<Vec<TomlPatchDef>, Box<dyn std::error::Error>> {

@@ -1,10 +1,12 @@
 use crate::common::params::CcInit;
 use crate::config_builder::{
-    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, VoiceStealingConfig,
+    ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, TomlOrderConfig,
+    VoiceStealingConfig, build_patch_table,
 };
 use crate::effects::master_fx::master_limiter;
+use crate::ios::display::{KeyboardDisplay, shorten_cc_name};
 pub use crate::ios::midi::SynthMsg;
-use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent};
+use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
 use crate::ios::threads::set_realtime_priority;
 use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
@@ -31,9 +33,11 @@ use fundsp::{
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
 struct AudioBuffers {
     output: BufferVec,
@@ -106,13 +110,17 @@ pub struct SynthPlayer<const N: usize> {
 impl<const N: usize> Synth<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
         let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
-        Self {
+        let mut s = Self {
             voice_manager,
             buffers: AudioBuffers {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
             },
-        }
+        };
+        s.voice_manager
+            .update_screen(&patch_table.clone().entries[0].toml.name, "")
+            .unwrap();
+        s
     }
 
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
@@ -122,7 +130,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             .ok_or(anyhow!("failed to find a default output device"))?;
         let default_config = device.default_output_config().expect("No default config");
 
-        // 2. Query the device's supported buffer size range
         let buffer_size_range = default_config.buffer_size();
 
         let buffer_size = match buffer_size_range {
@@ -144,7 +151,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             }
         };
 
-        // 4. Build your final stream configuration
         let config = StreamConfig {
             channels: default_config.channels(),
             sample_rate: default_config.sample_rate(),
@@ -232,13 +238,8 @@ pub fn write_data_block<T: Sample + FromSample<f32>>(
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum RelayedMessage {
-    SystemReset,
-}
-
 /// Single sound emitter that decodes midi and manages voices - used by SynthPlayer and LRPlayer to manage output.
-#[derive(Clone)]
+//#[derive(Clone)]
 struct VoiceManager<const N: usize> {
     states: [SharedMidiState; N],
     next: ModNumC<usize, N>,
@@ -252,13 +253,14 @@ struct VoiceManager<const N: usize> {
     sound_node_id: NodeId,
     mix_net: Net,
     current_patch_num: usize,
-    cc_to_logical_num: HashMap<u8, (KnobGroup, usize)>,
+    cc_to_usize_index: HashMap<u8, (KnobGroup, usize)>,
     button_event_processor: ButtonEventProcessor,
+    keyboard_display: Option<KeyboardDisplay>,
 }
 
 impl<const N: usize> VoiceManager<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
-        let cc_to_logical_num = Self::get_cc_map(&config);
+        let cc_to_usize_index = Self::get_cc_map(&config);
         let first_table = &patch_table.clone().entries[0];
         let synth_func = first_table.sound_factory.build_synth();
         let fx_cc_array = &first_table.effects.get_initial_cc();
@@ -280,7 +282,8 @@ impl<const N: usize> VoiceManager<N> {
         let fx_node_id = master_fx_net.chain(Box::new(
             first_table.effects.clone().build_chain(&states[0]),
         ));
-        Self {
+        let keyboard_display = KeyboardDisplay::try_new();
+        let mut s = Self {
             states,
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
@@ -289,7 +292,7 @@ impl<const N: usize> VoiceManager<N> {
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
-            cc_to_logical_num,
+            cc_to_usize_index,
             current_patch_num: 0,
             fx_node_id,
             mix_net: Net::new(2, 2),
@@ -299,8 +302,33 @@ impl<const N: usize> VoiceManager<N> {
                 None,
                 None,
             ),
-        }
+            keyboard_display,
+        };
+        s.clear_screen().unwrap();
+        s.update_screen("NABI Synth", "").unwrap();
+        sleep(Duration::from_millis(200));
+        s
     }
+
+    fn update_screen(
+        &mut self,
+        line1: &str,
+        line2: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut d) = self.keyboard_display {
+            d.set_text(line1, line2)?;
+            //sleep(Duration::from_millis(50));
+        }
+        Ok(())
+    }
+
+    fn clear_screen(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut d) = self.keyboard_display {
+            d.clear_screen()?;
+        }
+        Ok(())
+    }
+
     pub fn get_current_patch(&self) -> &PatchDef {
         &self.patch_table.entries[self.current_patch_num]
     }
@@ -354,19 +382,36 @@ impl<const N: usize> VoiceManager<N> {
         let new_vec = vec![new_toml];
         ProgramsFile::new(new_vec)
     }
-    pub fn save_patch_state(&self) {
+    pub fn save_patch_state(&mut self) {
         let toml = self.patch_state_to_toml();
         let new_file_name = format!(
             "{}-{}.toml",
             self.get_current_patch().toml.name,
             Local::now().format("%Y-%m-%d_%H-%M-%S.%3f")
         );
-        let new_toml =
+        let new_patch_toml_str =
             toml::to_string_pretty(&toml).expect("failed to serialize patch state to TOML");
-        let mut path_copy = self.config.patches_path.clone();
-        path_copy.push(new_file_name);
-        fs::write(path_copy, new_toml).expect("failed to save patch state to TOML");
+        let mut patches_path = self.config.patches_path.clone();
+        patches_path.push(new_file_name);
+        let new_patch = build_patch_table(&toml.program);
+        self.current_patch_num += 1;
+        Arc::make_mut(&mut self.patch_table)
+            .entries
+            .insert(self.current_patch_num, new_patch.entries[0].clone());
+        let mut new_order_vec: Vec<String> = Vec::with_capacity(self.patch_table.entries.len());
+        for entry in &self.patch_table.entries {
+            new_order_vec.push(entry.toml.name.clone())
+        }
+        let toml_order_config = toml::to_string_pretty(&TomlOrderConfig {
+            patch_order: new_order_vec,
+        })
+        .expect("failed to serialize Ordering to string from TOML");
+        let mut ordering_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        ordering_path.push("config/order.toml");
+        fs::write(ordering_path, toml_order_config).expect("failed to write Order state to TOML");
+        fs::write(patches_path, new_patch_toml_str).expect("failed to write patch state to TOML");
     }
+
     pub fn handle_button_event(&mut self, event: PatchButtonEvent) {
         match event {
             PatchButtonEvent::ChangeProgram(offset) => {
@@ -412,15 +457,15 @@ impl<const N: usize> VoiceManager<N> {
     }
 
     fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
-        let mut cc_to_logical_num = HashMap::new();
+        let mut cc_to_usize_index = HashMap::new();
         for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Sound, i));
+            cc_to_usize_index.insert(cc, (KnobGroup::Sound, i));
         }
         for (i, &cc) in config.fx_cc_mapping.iter().enumerate() {
-            cc_to_logical_num.insert(cc, (KnobGroup::Effect, i));
+            cc_to_usize_index.insert(cc, (KnobGroup::Effect, i));
         }
-        println!("{:?}", cc_to_logical_num);
-        cc_to_logical_num
+        println!("{:?}", cc_to_usize_index);
+        cc_to_usize_index
     }
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         for i in 0..self.states.len() {
@@ -499,20 +544,45 @@ impl<const N: usize> VoiceManager<N> {
                 } => {
                     //eprintln!("Control change from {:?} to {:?}", control, value);
                     // quantized to 0.0-1.0 with 0.01 steps:
-                    if let Some(&(group, idx)) = self.cc_to_logical_num.get(control) {
+                    if let Some(&(group, idx)) = self.cc_to_usize_index.get(control) {
                         let norm = *value as f32 / 127.0;
+                        let current = self.get_current_patch().clone();
+                        let mut cc_line = "".to_string();
                         match group {
                             KnobGroup::Sound => {
                                 for state in self.states.iter_mut() {
                                     state.sound_cc_vals[idx].set_value(norm);
                                 }
+                                if let Some(cc_name) =
+                                    // logical is usize+1
+                                    current.sound_factory.params.param_from_cc_index(idx + 1)
+                                {
+                                    cc_line = format!(
+                                        "{} {}",
+                                        cc_name.name.replace("_", " "),
+                                        (norm * 100.0).round()
+                                    );
+                                };
                             }
                             KnobGroup::Effect => {
                                 for state in self.states.iter_mut() {
                                     state.fx_cc_vals[idx].set_value(norm);
                                 }
+                                if let Some((fx_name, cc)) =
+                                    // logical is usize+1
+                                    current.effects.fx_and_param_from_index(idx + 1)
+                                {
+                                    cc_line = format!(
+                                        "{} {} {}%",
+                                        fx_name.to_uppercase(),
+                                        shorten_cc_name(cc.name),
+                                        (norm * 100.0).round()
+                                    )
+                                };
                             }
                         }
+                        self.update_screen(&current.toml.name, &cc_line)
+                            .expect("Failed to update screen");
                     } else {
                         let event = self.button_event_processor.process_event(control, value);
                         self.handle_button_event(event);
@@ -564,7 +634,7 @@ impl<const N: usize> VoiceManager<N> {
         self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
-        //println!("recent pitches: {:?}", self.recent_pitches);
+        println!("recent pitches: {:?}", self.recent_pitches);
     }
 
     fn off(&mut self, pitch: u8) {
@@ -578,7 +648,7 @@ impl<const N: usize> VoiceManager<N> {
     fn change_patch_with_offset(&mut self, offset: i32) {
         let len = self.patch_table.entries.len();
         if len == 0 {
-            return; // No patches, nothing to do
+            return;
         }
         // Use modulo arithmetic for wrap-around
         let new_num = (self.current_patch_num as i32 + offset).rem_euclid(len as i32);
@@ -588,7 +658,6 @@ impl<const N: usize> VoiceManager<N> {
     fn apply_init_cc_vals(&mut self) {
         let table = self.patch_table.clone();
         if let Some(entry) = table.entries.get(self.current_patch_num) {
-            // 1. Apply effect initial CCs to effect knobs
             for (i, &val) in entry.effects.get_initial_cc().iter().enumerate() {
                 if i < self.states[0].fx_cc_vals.len() {
                     for state in self.states.iter_mut() {
@@ -626,7 +695,8 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
-            println!("changed to patch: {}", entry.toml.name)
+            self.update_screen(&entry.toml.name, "").unwrap();
+            //println!("changed to patch: {}", entry.toml.name)
         }
     }
 

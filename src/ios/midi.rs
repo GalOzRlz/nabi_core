@@ -121,3 +121,8 @@ impl SynthMsg {
 pub struct SynthMsg {
     pub msg: MidiMsg,
 }
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum RelayedMessage {
+    SystemReset,
+}

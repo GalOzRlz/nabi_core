@@ -2,13 +2,14 @@
 name = "nabi_core"
 version = "0.1.0"
 edition = "2024"
-description = "Live MIDI-conrolled synthesizer software."
+description = "Live MIDI-conrolled synthesthis and effects engine"
 readme = "README.md"
-homepage = "https://github.com/gjf2a/nabi_core"
-repository = "https://github.com/gjf2a/nabi_core"
+homepage = "https://github.com/GalOzRlz/nabi_core"
+repository = "https://github.com/GalOzRlz/nabi_core"
 license = "MIT OR Apache-2.0"
 keywords = ["music", "midi", "synthesizer", "synth", "audio"]
 categories = ["hardware-support", "multimedia::audio"]
+default-run = "nabi_core"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
