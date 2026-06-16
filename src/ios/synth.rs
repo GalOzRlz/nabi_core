@@ -661,7 +661,8 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
-            println!("changed to patch: {}", entry.toml.name)
+            self.update_screen(&entry.toml.name, "").unwrap();
+            //println!("changed to patch: {}", entry.toml.name)
         }
     }
 
