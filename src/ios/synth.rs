@@ -315,6 +315,7 @@ impl<const N: usize> VoiceManager<N> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref mut d) = self.keyboard_display {
             d.set_text(line1, line2)?;
+            sleep(Duration::from_millis(50));
         }
         Ok(())
     }
