@@ -39,16 +39,20 @@ impl KeyboardDisplay {
 
     pub fn set_text(&mut self, line1: &str, line2: &str) -> anyhow::Result<()> {
         let msg = self.build_sysex(line1, line2);
-        println!("Sending {} bytes: {:02X?}", msg.len(), msg); // debug
         self.conn.send(&msg)?;
         Ok(())
     }
 
     pub fn clear_screen(&mut self) -> anyhow::Result<()> {
-        let clear = vec![
-            0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x04, 0x01, 0x60, 0x61, 0xF7,
-        ];
-        self.conn.send(&clear)?;
+        match self.model {
+            KeyboardModel::KeyLabEssentialMk3 => {
+                let clear = vec![
+                    0xF0, 0x00, 0x20, 0x6B, 0x7F, 0x42, 0x04, 0x01, 0x60, 0x61, 0xF7,
+                ];
+                self.conn.send(&clear)?;
+            }
+        }
+
         Ok(())
     }
 
