@@ -314,7 +314,6 @@ impl<const N: usize> VoiceManager<N> {
         line2: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref mut d) = self.keyboard_display {
-            println!("Updating screen with {} {}", line1, line2);
             d.set_text(line1, line2)?;
         }
         Ok(())
@@ -544,18 +543,34 @@ impl<const N: usize> VoiceManager<N> {
                     // quantized to 0.0-1.0 with 0.01 steps:
                     if let Some(&(group, idx)) = self.cc_to_logical_num.get(control) {
                         let norm = *value as f32 / 127.0;
+                        let current = self.get_current_patch().clone();
+                        let mut cc_line = "".to_string();
                         match group {
                             KnobGroup::Sound => {
                                 for state in self.states.iter_mut() {
                                     state.sound_cc_vals[idx].set_value(norm);
+                                    if let Some(cc_name) =
+                                        current.effects.chain_param_from_cc_index(idx)
+                                    {
+                                        cc_line =
+                                            format!("{} {}", cc_name.name, (norm * 100.0).round());
+                                    };
                                 }
                             }
                             KnobGroup::Effect => {
                                 for state in self.states.iter_mut() {
                                     state.fx_cc_vals[idx].set_value(norm);
+                                    if let Some(cc_name) =
+                                        current.sound_factory.params.param_from_cc_index(idx)
+                                    {
+                                        cc_line =
+                                            format!("{} {}%", cc_name.name, (norm * 100.0).round())
+                                    };
                                 }
                             }
                         }
+                        self.update_screen(&current.toml.name, &cc_line)
+                            .expect("Failed to update screen");
                     } else {
                         let event = self.button_event_processor.process_event(control, value);
                         self.handle_button_event(event);
