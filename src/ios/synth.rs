@@ -35,6 +35,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
 struct AudioBuffers {
     output: BufferVec,
@@ -107,13 +109,17 @@ pub struct SynthPlayer<const N: usize> {
 impl<const N: usize> Synth<N> for SynthPlayer<N> {
     fn new(patch_table: Arc<PatchTable>, config: GlobalConfig) -> Self {
         let voice_manager = VoiceManager::<N>::new(patch_table.clone(), config);
-        Self {
+        let mut s = Self {
             voice_manager,
             buffers: AudioBuffers {
                 output: BufferVec::new(2),
                 input: BufferVec::new(2),
             },
-        }
+        };
+        s.voice_manager
+            .update_screen(&patch_table.clone().entries[0].toml.name, "")
+            .unwrap();
+        s
     }
 
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
@@ -297,7 +303,8 @@ impl<const N: usize> VoiceManager<N> {
             keyboard_display,
         };
         s.clear_screen().unwrap();
-        s.update_screen(&first_table.toml.name, "").unwrap();
+        s.update_screen("NABI Synth", "").unwrap();
+        sleep(Duration::from_millis(200));
         s
     }
 
