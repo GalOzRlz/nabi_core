@@ -61,11 +61,11 @@ impl CcInit for FxChainFactory {
 }
 
 impl FxChainFactory {
-    pub fn chain_param_from_cc_index(&self, idx: usize) -> Option<&CcParam> {
+    pub fn fx_and_param_from_index(&self, idx: usize) -> Option<(&str, &CcParam)> {
         if let Some(definitions) = &self.definitions {
             for def in definitions.iter().filter(|x| x.cc_params.is_some()) {
                 if let Some(x) = def.param_from_cc_index(idx) {
-                    return Some(x);
+                    return Some((def.name, x));
                 }
             }
         }

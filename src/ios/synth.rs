@@ -315,7 +315,7 @@ impl<const N: usize> VoiceManager<N> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref mut d) = self.keyboard_display {
             d.set_text(line1, line2)?;
-            sleep(Duration::from_millis(50));
+            //sleep(Duration::from_millis(50));
         }
         Ok(())
     }
@@ -566,13 +566,14 @@ impl<const N: usize> VoiceManager<N> {
                                 for state in self.states.iter_mut() {
                                     state.fx_cc_vals[idx].set_value(norm);
                                 }
-                                if let Some(cc_name) =
+                                if let Some((fx_name, cc)) =
                                     // logical is usize+1
-                                    current.effects.chain_param_from_cc_index(idx + 1)
+                                    current.effects.fx_and_param_from_index(idx + 1)
                                 {
                                     cc_line = format!(
-                                        "{} {}%",
-                                        cc_name.name.replace("_", " "),
+                                        "{} {} {}%",
+                                        fx_name.to_uppercase(),
+                                        cc.name.replace("_", " "),
                                         (norm * 100.0).round()
                                     )
                                 };
