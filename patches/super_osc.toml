@@ -2,7 +2,7 @@
 function = "super_osc"
 name = "super tri"
 [program.effects]
-chain = ["reverb"]
+
 [program.effects.configs.reverb.values]
 # Construction parameters (never modulated)
 room_size = 6.0

@@ -64,7 +64,7 @@ pub trait Synth<const N: usize> {
         let max_ns_display = callback_max_ns.clone();
         std::thread::spawn(move || {
             loop {
-                std::thread::sleep(std::time::Duration::from_secs(2));
+                std::thread::sleep(std::time::Duration::from_secs(1));
                 let max_us = max_ns_display.load(Ordering::Relaxed) as f64 / 1000.0;
                 eprintln!("Max callback duration: {:.1} µs", max_us);
             }

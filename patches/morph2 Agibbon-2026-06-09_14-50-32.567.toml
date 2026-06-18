@@ -29,7 +29,6 @@ detune1 = 3
 detune2 = 4
 
 [program.effects]
-chain = ["reverb"]
 
 [program.effects.configs.reverb.values]
 room_size = 6.0
