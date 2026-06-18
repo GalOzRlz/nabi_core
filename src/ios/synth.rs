@@ -17,7 +17,7 @@ use bare_metal_modulo::*;
 use chrono::Local;
 use core_affinity2::Cores;
 use cpal::{
-    Device, FromSample, SAMPLE_RATE_CD, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
+    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
@@ -137,7 +137,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let buffer_size = match buffer_size_range {
             // If the device reports a min/max range, pick a value in between
             SupportedBufferSize::Range { min, max } => {
-                let target = 256; // todo: make it configurable?
+                let target = 370; // todo: make it configurable?
                 // Clamp the target to the valid range [min, max]
                 let chosen = target.clamp(*min, *max);
                 println!(
@@ -155,7 +155,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
         let config = StreamConfig {
             channels: default_config.channels(),
-            sample_rate: SAMPLE_RATE_CD,
+            sample_rate: default_config.sample_rate(),
             buffer_size,
         };
         match default_config.sample_format() {
