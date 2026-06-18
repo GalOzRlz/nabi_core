@@ -63,7 +63,7 @@ pub trait Synth<const N: usize> {
         stream.play()?;
         while self.handle_messages(midi_msgs.clone()) != RelayedMessage::SystemReset {
             let max_us = callback_max_ns.load(Ordering::Relaxed) as f64 / 1000.0;
-            eprintln!("Max callback duration: {:.1} µs", max_us);
+            println!("Max callback duration: {:.1} µs", max_us);
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
