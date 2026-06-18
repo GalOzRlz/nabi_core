@@ -718,10 +718,10 @@ impl<const N: usize> VoiceManager<N> {
             self.set_midi_to_hz(tuner);
             self.current_patch_num = program;
             self.rebuild_and_replace_fx_chain();
+            self.commit_patch_changes();
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
-
             self.update_screen(&self.get_display_title(), "").unwrap();
             //println!("changed to patch: {}", entry.toml.name)
         }
