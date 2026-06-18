@@ -34,6 +34,5 @@ petname = "3.0.0"
 core_affinity2 = "0.15.4"
 libc = "0.2.186"
 
-[profile.profiling]
-inherits = "release"
-debug = true
+[features]
+profile-callback = []
