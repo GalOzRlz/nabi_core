@@ -24,7 +24,7 @@ use cpal::{
 use crossbeam_queue::SegQueue;
 use fundsp::prelude::{NetBackend, U2};
 use fundsp::prelude32::Net;
-use fundsp::prelude64::{BufferVec, Fade, NodeId, split};
+use fundsp::prelude64::{BufferVec, NodeId, split};
 use fundsp::{
     prelude::AudioUnit,
     prelude64::{shared, var},
@@ -493,9 +493,7 @@ impl<const N: usize> VoiceManager<N> {
     fn rebuild_and_replace_fx_chain(&mut self) {
         let entry = &self.patch_table.entries[self.current_patch_num].effects;
         let new_fx_net = entry.clone().build_chain(&self.states[0]);
-        self.mix_net
-            // leave some trailing if possible:
-            .crossfade(self.fx_node_id, Fade::Smooth, 0.2, Box::new(new_fx_net));
+        self.mix_net.replace(self.fx_node_id, Box::new(new_fx_net));
     }
 
     /// Commit patch Net changes (sound rebuilt, effects chain rebuild, etc.)
