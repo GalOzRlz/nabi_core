@@ -137,7 +137,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let buffer_size = match buffer_size_range {
             // If the device reports a min/max range, pick a value in between
             SupportedBufferSize::Range { min, max } => {
-                let target = 256; // todo: make it configurable?
+                let target = 370; // todo: make it configurable?
                 // Clamp the target to the valid range [min, max]
                 let chosen = target.clamp(*min, *max);
                 println!(
@@ -180,15 +180,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
         let input_buffer = self.buffers.input.clone();
         let mut output_buffer = self.buffers.output.clone();
-        input_buffer.buffer_ref();
-        output_buffer.buffer_mut();
 
-        // --- Pre‑warm: force one resize allocation outside the callback ---
-        // This call will resize the internal Vec to hold at least `max_frames * 2` floats.
-        // It's safe to call outside the real‑time thread.
-        output_buffer.buffer_mut();
-        // To trigger the resize, we need to actually *use* it with `max_frames`.
-        // The easiest way: process one dummy block.
         mix.reset();
         mix.set_sample_rate(sample_rate);
         mix.process(
@@ -196,17 +188,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             &input_buffer.buffer_ref(),
             &mut output_buffer.buffer_mut(),
         );
-        mix.reset(); // clean up any state changes (optional)
-        // Now output_buffer's internal vector is large enough for any n_frames ≤ max_frames.
-        // Do the same for input_buffer if needed (usually input_buffer doesn't allocate
-        // because it's read‑only via buffer_ref(), but you can also pre‑warm it
-        // by passing it to a dummy process call as input).
-        input_buffer.buffer_ref(); // this might not resize, but input_buffer's inner Vec
-        // is typically sized by the same mechanism. To be safe,
-        // create a dummy NetBackend that processes max_frames
-        // using both buffers, as above.
-
-        // The above ensures both input and output buffers are pre‑sized.
+        mix.reset();
 
         let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
             mix.process(
