@@ -31,6 +31,7 @@ circular-buffer  = "1.2.0"
 chrono = "0.4.44"
 globwalk = "0.9.1"
 petname = "3.0.0"
+core_affinity2 = "0.15.4"
 
 [profile.profiling]
 inherits = "release"

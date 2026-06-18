@@ -87,6 +87,6 @@ impl KeyboardDisplay {
     }
 }
 
-pub fn shorten_cc_name(name: &str) -> String {
-    name.split('_').next().unwrap_or(name).to_string()
+pub fn shorten_cc_name(name: &str) -> &str {
+    name.split('_').next().unwrap_or(name)
 }

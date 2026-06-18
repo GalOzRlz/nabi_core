@@ -3,7 +3,7 @@ use crate::config_builder::{
     ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, TomlOrderConfig,
     VoiceStealingConfig, build_patch_table,
 };
-use crate::effects::master_fx::master_limiter;
+use crate::effects::master_stereo_fx::master_limiter;
 use crate::ios::display::{KeyboardDisplay, shorten_cc_name};
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
@@ -15,6 +15,7 @@ use crate::{
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use chrono::Local;
+use core_affinity2::Cores;
 use cpal::{
     Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
@@ -117,7 +118,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             },
         };
         s.voice_manager
-            .update_screen(&patch_table.clone().entries[0].toml.name, "")
+            .update_screen(&s.voice_manager.get_display_title(), "")
             .unwrap();
         s
     }
@@ -199,6 +200,9 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             .build_output_stream(
                 *config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                    // todo: add audio thread core to global config
+                    let cores = Cores::from_cmdline("1").unwrap();
+                    cores.ids.first().unwrap().set_affinity().ok();
                     write_data_block(data, channels, block_size, &mut next_block);
                 },
                 err_fn,
@@ -433,12 +437,9 @@ impl<const N: usize> VoiceManager<N> {
             .build_synth();
         self.synth_func = new_synth;
         let new_sound_net = self.sound();
-        self.mix_net.crossfade(
-            self.sound_node_id,
-            Fade::Smooth,
-            0.01,
-            Box::new(new_sound_net),
-        );
+        // replace to avoid cpu spikes with crossfading multiple voices
+        self.mix_net
+            .replace(self.sound_node_id, Box::new(new_sound_net));
     }
 
     /// Rebuild current fx chain based on the state of the patch table - without committing.
@@ -446,6 +447,7 @@ impl<const N: usize> VoiceManager<N> {
         let entry = &self.patch_table.entries[self.current_patch_num].effects;
         let new_fx_net = entry.clone().build_chain(&self.states[0]);
         self.mix_net
+            // leave some trailing if possible:
             .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
     }
 
@@ -517,6 +519,13 @@ impl<const N: usize> VoiceManager<N> {
         };
         mix >> master_limiter()
     }
+    fn get_display_title(&self) -> String {
+        format!(
+            "{} {}",
+            self.current_patch_num + 1,
+            self.get_current_patch().toml.name
+        )
+    }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
         match msg {
@@ -571,7 +580,7 @@ impl<const N: usize> VoiceManager<N> {
                                     current.effects.fx_and_param_from_index(idx + 1)
                                 {
                                     cc_line = format!(
-                                        "{} {} {}%",
+                                        "{} {} {}",
                                         fx_name.to_uppercase(),
                                         shorten_cc_name(cc.name),
                                         (norm * 100.0).round()
@@ -579,7 +588,7 @@ impl<const N: usize> VoiceManager<N> {
                                 };
                             }
                         }
-                        self.update_screen(&current.toml.name, &cc_line)
+                        self.update_screen(&self.get_display_title(), &cc_line)
                             .expect("Failed to update screen");
                     } else {
                         let event = self.button_event_processor.process_event(control, value);
@@ -693,7 +702,8 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
-            self.update_screen(&entry.toml.name, "").unwrap();
+
+            self.update_screen(&self.get_display_title(), "").unwrap();
             //println!("changed to patch: {}", entry.toml.name)
         }
     }
