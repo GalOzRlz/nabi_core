@@ -184,10 +184,8 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                 &input_buffer.buffer_ref(),
                 &mut output_buffer.buffer_mut(),
             );
-            for _ in 0..n_frames {
-                for i in 0..n_frames {
-                    block[i] = (output_buffer.at_f32(0, i), output_buffer.at_f32(1, i));
-                }
+            for i in 0..n_frames {
+                block[i] = (output_buffer.at_f32(0, i), output_buffer.at_f32(1, i));
             }
         };
 
@@ -196,19 +194,22 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
+        // todo: add audio thread core to global config
+        let target_core = Cores::from_cmdline("1")?.ids[0];
+        let once = std::sync::Once::new();
+
         device
             .build_output_stream(
                 *config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                    // todo: add audio thread core to global config
-                    let cores = Cores::from_cmdline("1").unwrap();
-                    cores.ids.first().unwrap().set_affinity().ok();
-
-                    #[cfg(target_os = "linux")]
-                    unsafe {
-                        let param = libc::sched_param { sched_priority: 80 };
-                        libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
-                    }
+                    once.call_once(|| {
+                        target_core.set_affinity().ok();
+                        #[cfg(target_os = "linux")]
+                        unsafe {
+                            let param = libc::sched_param { sched_priority: 80 };
+                            libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+                        }
+                    });
 
                     write_data_block(data, channels, block_size, &mut next_block);
                 },
