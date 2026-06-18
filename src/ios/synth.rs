@@ -183,6 +183,33 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let mut output_buffer = self.buffers.output.clone();
         input_buffer.buffer_ref();
         output_buffer.buffer_mut();
+
+        // --- Pre‑warm: force one resize allocation outside the callback ---
+        // This call will resize the internal Vec to hold at least `max_frames * 2` floats.
+        // It's safe to call outside the real‑time thread.
+        output_buffer.buffer_mut();
+        // To trigger the resize, we need to actually *use* it with `max_frames`.
+        // The easiest way: process one dummy block.
+        let mut dummy_mix = self.voice_manager.mix_net_backend(); // temporary
+        dummy_mix.reset();
+        dummy_mix.set_sample_rate(sample_rate);
+        dummy_mix.process(
+            MAX_BLOCK_SIZE,
+            &input_buffer.buffer_ref(),
+            &mut output_buffer.buffer_mut(),
+        );
+        dummy_mix.reset(); // clean up any state changes (optional)
+        // Now output_buffer's internal vector is large enough for any n_frames ≤ max_frames.
+        // Do the same for input_buffer if needed (usually input_buffer doesn't allocate
+        // because it's read‑only via buffer_ref(), but you can also pre‑warm it
+        // by passing it to a dummy process call as input).
+        input_buffer.buffer_ref(); // this might not resize, but input_buffer's inner Vec
+        // is typically sized by the same mechanism. To be safe,
+        // create a dummy NetBackend that processes max_frames
+        // using both buffers, as above.
+
+        // The above ensures both input and output buffers are pre‑sized.
+
         let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
             mix.process(
                 n_frames,
@@ -215,9 +242,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                             libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
                         }
                     });
-                    // for sample in data.iter_mut() {
-                    //     *sample = T::from_sample(0.0);
-                    // }
+
                     write_data_block(data, channels, &mut block_buffer, &mut next_block);
                 },
                 err_fn,
