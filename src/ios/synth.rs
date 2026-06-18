@@ -135,7 +135,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let buffer_size = match buffer_size_range {
             // If the device reports a min/max range, pick a value in between
             SupportedBufferSize::Range { min, max } => {
-                let target = 384; // todo: make it configurable?
+                let target = 256; // todo: make it configurable?
                 // Clamp the target to the valid range [min, max]
                 let chosen = target.clamp(*min, *max);
                 println!(
@@ -172,6 +172,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
     where
         T: Sample + FromSample<f32> + SizedSample,
     {
+        eprintln!("stream config: {:?}", config);
         let sample_rate = config.sample_rate as f64;
         let mut mix = self.voice_manager.mix_net_backend();
         mix.reset();
@@ -210,8 +211,10 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                             libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
                         }
                     });
-
-                    write_data_block(data, channels, block_size, &mut next_block);
+                    for sample in data.iter_mut() {
+                        *sample = T::from_sample(0.0);
+                    }
+                    //write_data_block(data, channels, block_size, &mut next_block);
                 },
                 err_fn,
                 None,
