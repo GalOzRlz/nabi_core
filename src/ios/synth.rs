@@ -203,6 +203,13 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                     // todo: add audio thread core to global config
                     let cores = Cores::from_cmdline("1").unwrap();
                     cores.ids.first().unwrap().set_affinity().ok();
+
+                    #[cfg(target_os = "linux")]
+                    unsafe {
+                        let param = libc::sched_param { sched_priority: 80 };
+                        libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+                    }
+
                     write_data_block(data, channels, block_size, &mut next_block);
                 },
                 err_fn,
