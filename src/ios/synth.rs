@@ -246,6 +246,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                     unsafe {
                         let param = libc::sched_param { sched_priority: 80 };
                         libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+                        libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE);
                     }
                 });
                 let start = std::time::Instant::now();
