@@ -61,9 +61,15 @@ pub trait Synth<const N: usize> {
         Self::warm_up(midi_msgs.clone());
         let (stream, callback_max_ns) = self.get_stream::<T>(&config, &device)?;
         stream.play()?;
+        let max_ns_display = callback_max_ns.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let max_us = max_ns_display.load(Ordering::Relaxed) as f64 / 1000.0;
+                eprintln!("Max callback duration: {:.1} µs", max_us);
+            }
+        });
         while self.handle_messages(midi_msgs.clone()) != RelayedMessage::SystemReset {
-            let max_us = callback_max_ns.load(Ordering::Relaxed) as f64 / 1000.0;
-            println!("Max callback duration: {:.1} µs", max_us);
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
