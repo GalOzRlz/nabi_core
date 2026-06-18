@@ -12,7 +12,7 @@ use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
     NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable, shared_array_to_f32_array,
 };
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use bare_metal_modulo::*;
 use chrono::Local;
 use core_affinity2::Cores;
@@ -36,6 +36,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -58,10 +59,12 @@ pub trait Synth<const N: usize> {
         config: StreamConfig,
     ) -> anyhow::Result<()> {
         Self::warm_up(midi_msgs.clone());
-        let stream = self.get_stream::<T>(&config, &device)?;
+        let (stream, callback_max_ns) = self.get_stream::<T>(&config, &device)?;
         stream.play()?;
         while self.handle_messages(midi_msgs.clone()) != RelayedMessage::SystemReset {
-            std::thread::sleep(std::time::Duration::from_millis(1000));
+            let max_us = callback_max_ns.load(Ordering::Relaxed) as f64 / 1000.0;
+            eprintln!("Max callback duration: {:.1} µs", max_us);
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
         Ok(())
@@ -99,7 +102,11 @@ pub trait Synth<const N: usize> {
         }
     }
 
-    fn get_stream<T>(&mut self, config: &StreamConfig, device: &Device) -> anyhow::Result<Stream>
+    fn get_stream<T>(
+        &mut self,
+        config: &StreamConfig,
+        device: &Device,
+    ) -> anyhow::Result<(Stream, Arc<AtomicU64>)>
     where
         T: Sample + FromSample<f32> + SizedSample;
 }
@@ -170,11 +177,16 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let result = None;
         result.or(self.voice_manager.decode(msg))
     }
-    fn get_stream<T>(&mut self, config: &StreamConfig, device: &Device) -> anyhow::Result<Stream>
+    fn get_stream<T>(
+        &mut self,
+        config: &StreamConfig,
+        device: &Device,
+    ) -> anyhow::Result<(Stream, Arc<AtomicU64>)>
     where
         T: Sample + FromSample<f32> + SizedSample,
     {
         eprintln!("stream config: {:?}", config);
+
         let sample_rate = config.sample_rate as f64;
         let mut mix = self.voice_manager.mix_net_backend();
 
@@ -196,6 +208,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                 &input_buffer.buffer_ref(),
                 &mut output_buffer.buffer_mut(),
             );
+
             for i in 0..n_frames {
                 block[i] = (output_buffer.at_f32(0, i), output_buffer.at_f32(1, i));
             }
@@ -210,25 +223,29 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let target_core = Cores::from_cmdline("1")?.ids[0];
         let once = std::sync::Once::new();
 
-        device
-            .build_output_stream(
-                *config,
-                move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                    once.call_once(|| {
-                        target_core.set_affinity().ok();
-                        #[cfg(target_os = "linux")]
-                        unsafe {
-                            let param = libc::sched_param { sched_priority: 80 };
-                            libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
-                        }
-                    });
+        let max_callback_ns = Arc::new(AtomicU64::new(0));
+        let max_callback_ns_clone = max_callback_ns.clone(); // for the audio callback
 
-                    write_data_block(data, channels, &mut block_buffer, &mut next_block);
-                },
-                err_fn,
-                None,
-            )
-            .or_else(|err| bail!("{err:?}"))
+        let stream = device.build_output_stream(
+            *config,
+            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                once.call_once(|| {
+                    target_core.set_affinity().ok();
+                    #[cfg(target_os = "linux")]
+                    unsafe {
+                        let param = libc::sched_param { sched_priority: 80 };
+                        libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+                    }
+                });
+                let start = std::time::Instant::now();
+                write_data_block(data, channels, &mut block_buffer, &mut next_block);
+                let elapsed_ns = start.elapsed().as_nanos() as u64;
+                max_callback_ns_clone.fetch_max(elapsed_ns, Ordering::Relaxed);
+            },
+            err_fn,
+            None,
+        )?;
+        Ok((stream, max_callback_ns))
     }
 }
 
