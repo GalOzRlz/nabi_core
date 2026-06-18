@@ -39,6 +39,8 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
+const MAX_BLOCK_SIZE: usize = 64;
+
 struct AudioBuffers {
     output: BufferVec,
     input: BufferVec,
@@ -179,6 +181,8 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         mix.set_sample_rate(sample_rate);
         let input_buffer = self.buffers.input.clone();
         let mut output_buffer = self.buffers.output.clone();
+        input_buffer.buffer_ref();
+        output_buffer.buffer_mut();
         let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
             mix.process(
                 n_frames,
@@ -191,8 +195,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         };
 
         let channels = config.channels as usize;
-        let block_size = 64; // FunDSP’s max block size
-        let mut block_buffer = vec![(0.0f32, 0.0f32); block_size];
+        let mut block_buffer = vec![(0.0f32, 0.0f32); MAX_BLOCK_SIZE];
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
