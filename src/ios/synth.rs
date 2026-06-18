@@ -192,6 +192,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
         let channels = config.channels as usize;
         let block_size = 64; // FunDSP’s max block size
+        let mut block_buffer = vec![(0.0f32, 0.0f32); block_size];
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
@@ -211,10 +212,10 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                             libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
                         }
                     });
-                    for sample in data.iter_mut() {
-                        *sample = T::from_sample(0.0);
-                    }
-                    //write_data_block(data, channels, block_size, &mut next_block);
+                    // for sample in data.iter_mut() {
+                    //     *sample = T::from_sample(0.0);
+                    // }
+                    write_data_block(data, channels, &mut block_buffer, &mut next_block);
                 },
                 err_fn,
                 None,
@@ -226,16 +227,15 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 pub fn write_data_block<T: Sample + FromSample<f32>>(
     output: &mut [T],
     channels: usize,
-    block_size: usize,
+    block_buffer: &mut [(f32, f32)],
     next_block: &mut dyn FnMut(&mut [(f32, f32)], usize),
 ) {
     let frame_count = output.len() / channels;
-    let mut block_buffer = vec![(0.0f32, 0.0f32); block_size];
     let mut frames_written = 0;
 
     while frames_written < frame_count {
         let remaining = frame_count - frames_written;
-        let frames_to_gen = remaining.min(block_size);
+        let frames_to_gen = remaining.min(block_buffer.len());
 
         next_block(&mut block_buffer[..frames_to_gen], frames_to_gen);
 
