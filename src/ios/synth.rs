@@ -254,8 +254,14 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                     #[cfg(target_os = "linux")]
                     unsafe {
                         let param = libc::sched_param { sched_priority: 80 };
-                        libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
                         libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE);
+                        let ret = libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+                        if ret != 0 {
+                            let err = std::io::Error::last_os_error();
+                            eprintln!("Failed to set real-time priority: {err}");
+                        } else {
+                            eprintln!("Real-time priority set successfully");
+                        }
                     }
                 });
 
