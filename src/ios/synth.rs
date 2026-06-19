@@ -218,11 +218,11 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let input_buffer = self.buffers.input.clone();
         let mut output_buffer = self.buffers.output.clone();
 
-        // warm up buffer allocation
+        //  warm up buffer allocation
         {
             let mut temp_backend = self.voice_manager.build_backend(sample_rate);
             temp_backend.process(
-                sample_rate as usize,
+                MAX_BLOCK_SIZE,
                 &input_buffer.buffer_ref(),
                 &mut output_buffer.buffer_mut(),
             );
@@ -295,33 +295,6 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             None,
         )?;
         Ok((stream, max_callback_ns))
-    }
-}
-
-pub fn write_data_block<T: Sample + FromSample<f32>>(
-    output: &mut [T],
-    channels: usize,
-    block_buffer: &mut [(f32, f32)],
-    next_block: &mut dyn FnMut(&mut [(f32, f32)], usize),
-) {
-    let frame_count = output.len() / channels;
-    let mut frames_written = 0;
-
-    while frames_written < frame_count {
-        let remaining = frame_count - frames_written;
-        let frames_to_gen = remaining.min(block_buffer.len());
-
-        next_block(&mut block_buffer[..frames_to_gen], frames_to_gen);
-
-        // Copy the block into the output buffer
-        for (i, (l, r)) in block_buffer[..frames_to_gen].iter().enumerate() {
-            let index = (frames_written + i) * channels;
-            output[index] = T::from_sample(*l);
-            if channels == 2 {
-                output[index + 1] = T::from_sample(*r);
-            }
-        }
-        frames_written += frames_to_gen;
     }
 }
 
@@ -752,14 +725,14 @@ impl<const N: usize> VoiceManager<N> {
             let tuner = entry.tuning.clone();
             self.set_midi_to_hz(tuner);
             self.current_patch_num = program;
-            self.apply_init_cc_vals();
-            self.update_screen(&self.get_display_title(), "").unwrap();
             let swapper_opt = self.swapper.clone();
             if let Some(ref swapper) = swapper_opt {
                 let sample_rate = SAMPLE_RATE_CD; // or store this in VoiceManager
                 let new_backend = self.build_backend(sample_rate as f64);
                 swapper.swap_to(|| new_backend);
             }
+            self.apply_init_cc_vals();
+            self.update_screen(&self.get_display_title(), "").unwrap();
         }
     }
     fn bend(&mut self, bend: u16) {
