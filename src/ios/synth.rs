@@ -259,8 +259,8 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                     }
                 });
 
-                let mut guard = swapper.get_backend();
-                let mix = &mut *guard;
+                let mut guard = swapper.get_backend_guard();
+                let mix = guard.get_mut();
 
                 let start = std::time::Instant::now();
 

@@ -231,7 +231,7 @@ impl PatchSwapper {
 
     /// Call **inside the audio callback** to get the current backend.
     /// Automatically swaps in a new one if available, and moves the old one to the trash.
-    pub fn get_backend(&self) -> NetBackendGuard<'_> {
+    pub fn get_backend_guard(&self) -> NetBackendGuard<'_> {
         if self.swap_requested.load(Ordering::Acquire) {
             let mut cur = self.current.lock().unwrap();
             let mut pend = self.pending.lock().unwrap();
@@ -265,15 +265,8 @@ pub struct NetBackendGuard<'a> {
     swapper: &'a PatchSwapper,
 }
 
-impl<'a> std::ops::Deref for NetBackendGuard<'a> {
-    type Target = NetBackend;
-    fn deref(&self) -> &NetBackend {
-        self.backend.as_ref().unwrap()
-    }
-}
-
-impl<'a> std::ops::DerefMut for NetBackendGuard<'a> {
-    fn deref_mut(&mut self) -> &mut NetBackend {
+impl<'a> NetBackendGuard<'a> {
+    pub fn get_mut(&mut self) -> &mut NetBackend {
         self.backend.as_mut().unwrap()
     }
 }
