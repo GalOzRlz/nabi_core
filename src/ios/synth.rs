@@ -725,13 +725,13 @@ impl<const N: usize> VoiceManager<N> {
             let tuner = entry.tuning.clone();
             self.set_midi_to_hz(tuner);
             self.current_patch_num = program;
+            self.apply_init_cc_vals();
             let swapper_opt = self.swapper.clone();
             if let Some(ref swapper) = swapper_opt {
                 let sample_rate = SAMPLE_RATE_CD; // or store this in VoiceManager
                 let new_backend = self.build_backend(sample_rate as f64);
                 swapper.swap_to(|| new_backend);
             }
-            self.apply_init_cc_vals();
             self.update_screen(&self.get_display_title(), "").unwrap();
         }
     }
