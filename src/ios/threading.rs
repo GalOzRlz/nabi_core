@@ -5,11 +5,13 @@ use crate::patch_builder::PatchTable;
 use crate::tui::get_first_midi_device;
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use fundsp::prelude64::NetBackend;
 use midi_msg::ControlChange::CC;
 use midi_msg::{ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{MidiInput, MidiInputPort};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::{JoinHandle, sleep};
 use std::time::Duration;
@@ -200,4 +202,86 @@ pub fn cc_mapper_handler(
         }
     });
     handler
+}
+
+pub struct PatchSwapper {
+    current: Mutex<Option<NetBackend>>,
+    pending: Mutex<Option<NetBackend>>,
+    swap_requested: AtomicBool,
+    trash: Mutex<Vec<NetBackend>>,
+}
+
+impl PatchSwapper {
+    pub fn new(initial: NetBackend) -> Arc<Self> {
+        Arc::new(Self {
+            current: Mutex::new(Some(initial)),
+            pending: Mutex::new(None),
+            swap_requested: AtomicBool::new(false),
+            trash: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// Call from the main thread to schedule a new backend.
+    /// `build` is a closure that constructs a fresh `NetBackend` (may take some time, that’s fine).
+    pub fn swap_to<F: FnOnce() -> NetBackend>(&self, build: F) {
+        let new_backend = build(); // heavy work happens here, off the audio thread
+        *self.pending.lock().unwrap() = Some(new_backend);
+        self.swap_requested.store(true, Ordering::Release);
+    }
+
+    /// Call **inside the audio callback** to get the current backend.
+    /// Automatically swaps in a new one if available, and moves the old one to the trash.
+    pub fn get_backend(&self) -> NetBackendGuard<'_> {
+        if self.swap_requested.load(Ordering::Acquire) {
+            let mut cur = self.current.lock().unwrap();
+            let mut pend = self.pending.lock().unwrap();
+            if let Some(new_backend) = pend.take() {
+                let old = cur.replace(new_backend);
+                if let Some(old) = old {
+                    self.trash.lock().unwrap().push(old);
+                }
+                self.swap_requested.store(false, Ordering::Release);
+            }
+        }
+
+        let backend = self.current.lock().unwrap().take();
+        NetBackendGuard {
+            backend,
+            swapper: self,
+        }
+    }
+
+    /// Drop old backends safely – call from a background thread every ~200ms.
+    pub fn empty_trash(&self) {
+        let mut t = self.trash.lock().unwrap();
+        t.clear(); // deallocation happens here, off the audio thread
+    }
+}
+
+/// A guard that gives mutable access to the current backend and automatically returns
+/// it to the swapper when the audio callback finishes.
+pub struct NetBackendGuard<'a> {
+    backend: Option<NetBackend>,
+    swapper: &'a PatchSwapper,
+}
+
+impl<'a> std::ops::Deref for NetBackendGuard<'a> {
+    type Target = NetBackend;
+    fn deref(&self) -> &NetBackend {
+        self.backend.as_ref().unwrap()
+    }
+}
+
+impl<'a> std::ops::DerefMut for NetBackendGuard<'a> {
+    fn deref_mut(&mut self) -> &mut NetBackend {
+        self.backend.as_mut().unwrap()
+    }
+}
+
+impl<'a> Drop for NetBackendGuard<'a> {
+    fn drop(&mut self) {
+        if let Some(backend) = self.backend.take() {
+            *self.swapper.current.lock().unwrap() = Some(backend);
+        }
+    }
 }

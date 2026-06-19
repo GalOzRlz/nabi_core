@@ -5,7 +5,7 @@ use nabi_core::config_builder::{
     create_ordered_patch_table, gather_toml_files_recursive, load_global_config,
 };
 use nabi_core::ios::synth::SynthMsg;
-use nabi_core::ios::threads::{get_first_input_port, start_input_thread, start_output_thread};
+use nabi_core::ios::threading::{get_first_input_port, start_input_thread, start_output_thread};
 use nabi_core::patch_builder::PatchTable;
 use nabi_core::tui::console_choice_from;
 use std::sync::Arc;

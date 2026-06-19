@@ -7,6 +7,7 @@ use crate::effects::master_stereo_fx::master_limiter;
 use crate::ios::display::{KeyboardDisplay, shorten_cc_name};
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
+use crate::ios::threading::PatchSwapper;
 use crate::patch_builder::{KnobGroup, PatchDef};
 use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
@@ -17,14 +18,14 @@ use bare_metal_modulo::*;
 use chrono::Local;
 use core_affinity2::Cores;
 use cpal::{
-    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
+    Device, FromSample, SAMPLE_RATE_CD, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use crossbeam_queue::SegQueue;
 use fundsp::prelude::{NetBackend, U2};
 use fundsp::prelude32::Net;
-use fundsp::prelude64::{BufferVec, NodeId, split};
+use fundsp::prelude64::{BufferVec, split};
 use fundsp::{
     prelude::AudioUnit,
     prelude64::{shared, var},
@@ -148,7 +149,21 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let device = host
             .default_output_device()
             .ok_or(anyhow!("failed to find a default output device"))?;
+
         let default_config = device.default_output_config().expect("No default config");
+
+        let initial_backend = self.voice_manager.build_backend(SAMPLE_RATE_CD as f64);
+        let swapper = PatchSwapper::new(initial_backend);
+        self.voice_manager.swapper = Some(swapper.clone());
+
+        // Spawn the trash‑cleaning thread
+        let trash_swapper = swapper.clone();
+        std::thread::spawn(move || {
+            loop {
+                sleep(Duration::from_millis(200));
+                trash_swapper.empty_trash();
+            }
+        });
 
         let buffer_size_range = default_config.buffer_size();
 
@@ -173,7 +188,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
         let config = StreamConfig {
             channels: default_config.channels(),
-            sample_rate: default_config.sample_rate(),
+            sample_rate: SAMPLE_RATE_CD,
             buffer_size,
         };
         match default_config.sample_format() {
@@ -198,35 +213,29 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
     {
         eprintln!("stream config: {:?}", config);
 
-        let sample_rate = config.sample_rate as f64;
-        let mut mix = self.voice_manager.mix_net_backend();
+        let sample_rate = SAMPLE_RATE_CD as f64;
 
         let input_buffer = self.buffers.input.clone();
         let mut output_buffer = self.buffers.output.clone();
 
-        mix.reset();
-        mix.set_sample_rate(sample_rate);
-        mix.process(
-            MAX_BLOCK_SIZE,
-            &input_buffer.buffer_ref(),
-            &mut output_buffer.buffer_mut(),
-        );
-        mix.reset();
-
-        let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
-            mix.process(
-                n_frames,
+        // warm up buffer allocation
+        {
+            let mut temp_backend = self.voice_manager.build_backend(sample_rate);
+            temp_backend.process(
+                sample_rate as usize,
                 &input_buffer.buffer_ref(),
                 &mut output_buffer.buffer_mut(),
             );
+        }
 
-            for i in 0..n_frames {
-                block[i] = (output_buffer.at_f32(0, i), output_buffer.at_f32(1, i));
-            }
-        };
+        let swapper = self
+            .voice_manager
+            .swapper
+            .as_ref()
+            .expect("swapper not initialised")
+            .clone();
 
         let channels = config.channels as usize;
-        let mut block_buffer = vec![(0.0f32, 0.0f32); MAX_BLOCK_SIZE];
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
@@ -249,8 +258,36 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                         libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE);
                     }
                 });
+
+                let mut guard = swapper.get_backend();
+                let mix = &mut *guard;
+
                 let start = std::time::Instant::now();
-                write_data_block(data, channels, &mut block_buffer, &mut next_block);
+
+                let frame_count = data.len() / channels;
+                let mut frames_written = 0;
+
+                while frames_written < frame_count {
+                    let remaining = frame_count - frames_written;
+                    let frames_to_gen = remaining.min(MAX_BLOCK_SIZE);
+
+                    mix.process(
+                        frames_to_gen,
+                        &input_buffer.buffer_ref(),
+                        &mut output_buffer.buffer_mut(),
+                    );
+
+                    for i in 0..frames_to_gen {
+                        let sample_l = output_buffer.at_f32(0, i);
+                        let sample_r = output_buffer.at_f32(1, i);
+                        let index = (frames_written + i) * channels;
+                        data[index] = T::from_sample(sample_l);
+                        if channels == 2 {
+                            data[index + 1] = T::from_sample(sample_r);
+                        }
+                    }
+                    frames_written += frames_to_gen;
+                }
                 let elapsed_ns = start.elapsed().as_nanos() as u64;
                 max_callback_ns_clone.fetch_max(elapsed_ns, Ordering::Relaxed);
             },
@@ -299,13 +336,11 @@ struct VoiceManager<const N: usize> {
     master_volume: Shared,
     patch_table: Arc<PatchTable>,
     config: GlobalConfig,
-    fx_node_id: NodeId,
-    sound_node_id: NodeId,
-    mix_net: Net,
     current_patch_num: usize,
     cc_to_usize_index: HashMap<u8, (KnobGroup, usize)>,
     button_event_processor: ButtonEventProcessor,
     keyboard_display: Option<KeyboardDisplay>,
+    swapper: Option<Arc<PatchSwapper>>,
 }
 
 impl<const N: usize> VoiceManager<N> {
@@ -316,7 +351,7 @@ impl<const N: usize> VoiceManager<N> {
         let fx_cc_array = &first_table.effects.get_initial_cc();
         let sound_cc_array = &first_table.sound_factory.get_initial_cc();
         let tuner = first_table.tuning;
-        let mut master_fx_net = Net::new(2, 2);
+
         println!("sound cc array: {:?}", sound_cc_array);
         println!("fx cc array: {:?}", fx_cc_array);
         let states = [(); N].map(|_| {
@@ -329,9 +364,6 @@ impl<const N: usize> VoiceManager<N> {
             )
         });
 
-        let fx_node_id = master_fx_net.chain(Box::new(
-            first_table.effects.clone().build_chain(&states[0]),
-        ));
         let keyboard_display = KeyboardDisplay::try_new();
         let mut s = Self {
             states,
@@ -344,9 +376,7 @@ impl<const N: usize> VoiceManager<N> {
             config: config.clone(),
             cc_to_usize_index,
             current_patch_num: 0,
-            fx_node_id,
-            mix_net: Net::new(2, 2),
-            sound_node_id: NodeId::new(),
+            swapper: None,
             button_event_processor: ButtonEventProcessor::new(
                 Some(config.left_right_buttons),
                 None,
@@ -358,6 +388,21 @@ impl<const N: usize> VoiceManager<N> {
         s.update_screen("NABI Synth", "").unwrap();
         sleep(Duration::from_millis(200));
         s
+    }
+
+    pub fn build_backend(&mut self, sample_rate: f64) -> NetBackend {
+        let mut net = Net::new(2, 2);
+        let sound = self.sound();
+        net.chain(Box::new(sound));
+        if let Some(entry) = self.patch_table.entries.get(self.current_patch_num) {
+            let fx = entry.effects.clone().build_chain(&self.states[0]);
+            net.chain(Box::new(fx));
+        }
+        let mut backend = net.backend();
+        backend.reset();
+        backend.set_sample_rate(sample_rate);
+        net.commit();
+        backend
     }
 
     fn update_screen(
@@ -478,30 +523,6 @@ impl<const N: usize> VoiceManager<N> {
         }
     }
 
-    /// Rebuild current sound based on the state of the patch table - without committing.
-    fn rebuild_and_replace_sound(&mut self) {
-        let new_synth = self.patch_table.entries[self.current_patch_num]
-            .sound_factory
-            .build_synth();
-        self.synth_func = new_synth;
-        let new_sound_net = self.sound();
-        // replace to avoid cpu spikes with crossfading multiple voices
-        self.mix_net
-            .replace(self.sound_node_id, Box::new(new_sound_net));
-    }
-
-    /// Rebuild current fx chain based on the state of the patch table - without committing.
-    fn rebuild_and_replace_fx_chain(&mut self) {
-        let entry = &self.patch_table.entries[self.current_patch_num].effects;
-        let new_fx_net = entry.clone().build_chain(&self.states[0]);
-        self.mix_net.replace(self.fx_node_id, Box::new(new_fx_net));
-    }
-
-    /// Commit patch Net changes (sound rebuilt, effects chain rebuild, etc.)
-    fn commit_patch_changes(&mut self) {
-        self.mix_net.commit()
-    }
-
     fn get_cc_map(config: &GlobalConfig) -> HashMap<u8, (KnobGroup, usize)> {
         let mut cc_to_usize_index = HashMap::new();
         for (i, &cc) in config.sound_cc_mapping.iter().enumerate() {
@@ -526,19 +547,6 @@ impl<const N: usize> VoiceManager<N> {
             return true;
         }
         false
-    }
-    fn mix_net_backend(&mut self) -> NetBackend {
-        let backend = self.mix_net.backend();
-        let sound = self.sound();
-        self.sound_node_id = self.mix_net.chain(Box::new(sound));
-        let table = self.patch_table.clone();
-        if let Some(entry) = table.entries.get(self.current_patch_num) {
-            self.fx_node_id = self
-                .mix_net
-                .chain(Box::new(entry.effects.clone().build_chain(&self.states[0])));
-        }
-        self.mix_net.commit();
-        backend
     }
 
     fn sound(&mut self) -> Net {
@@ -744,15 +752,16 @@ impl<const N: usize> VoiceManager<N> {
             let tuner = entry.tuning.clone();
             self.set_midi_to_hz(tuner);
             self.current_patch_num = program;
-            self.rebuild_and_replace_fx_chain();
-            self.rebuild_and_replace_sound();
-            self.commit_patch_changes();
             self.apply_init_cc_vals();
             self.update_screen(&self.get_display_title(), "").unwrap();
-            //println!("changed to patch: {}", entry.toml.name)
+            let swapper_opt = self.swapper.clone();
+            if let Some(ref swapper) = swapper_opt {
+                let sample_rate = SAMPLE_RATE_CD; // or store this in VoiceManager
+                let new_backend = self.build_backend(sample_rate as f64);
+                swapper.swap_to(|| new_backend);
+            }
         }
     }
-
     fn bend(&mut self, bend: u16) {
         for state in self.states.iter_mut() {
             state.bend(bend);
