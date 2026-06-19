@@ -3,7 +3,7 @@ use crate::config_builder::{
     ConfigurableMappings, FreeVoiceStrategy, GlobalConfig, ProgramsFile, TomlOrderConfig,
     VoiceStealingConfig, build_patch_table,
 };
-use crate::effects::master_fx::master_limiter;
+use crate::effects::master_stereo_fx::master_limiter;
 use crate::ios::display::{KeyboardDisplay, shorten_cc_name};
 pub use crate::ios::midi::SynthMsg;
 use crate::ios::midi::{ButtonEventProcessor, PatchButtonEvent, RelayedMessage};
@@ -12,9 +12,10 @@ use crate::sound_engine::sound_building::SynthFunc;
 use crate::{
     NUM_MIDI_VALUES, SharedMidiState, patch_builder::PatchTable, shared_array_to_f32_array,
 };
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use bare_metal_modulo::*;
 use chrono::Local;
+use core_affinity2::Cores;
 use cpal::{
     Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
@@ -23,7 +24,7 @@ use cpal::{
 use crossbeam_queue::SegQueue;
 use fundsp::prelude::{NetBackend, U2};
 use fundsp::prelude32::Net;
-use fundsp::prelude64::{BufferVec, Fade, NodeId, split};
+use fundsp::prelude64::{BufferVec, NodeId, split};
 use fundsp::{
     prelude::AudioUnit,
     prelude64::{shared, var},
@@ -35,8 +36,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
+
+const MAX_BLOCK_SIZE: usize = 64;
 
 struct AudioBuffers {
     output: BufferVec,
@@ -55,10 +59,23 @@ pub trait Synth<const N: usize> {
         config: StreamConfig,
     ) -> anyhow::Result<()> {
         Self::warm_up(midi_msgs.clone());
-        let stream = self.get_stream::<T>(&config, &device)?;
+        let (stream, callback_max_ns) = self.get_stream::<T>(&config, &device)?;
         stream.play()?;
+
+        #[cfg(feature = "profile-callback")]
+        {
+            let max_ns_display = callback_max_ns.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    let max_us = max_ns_display.load(Ordering::Relaxed) as f64 / 1000.0;
+                    eprintln!("Max callback duration: {:.1} µs", max_us);
+                }
+            })
+        };
+
         while self.handle_messages(midi_msgs.clone()) != RelayedMessage::SystemReset {
-            std::thread::sleep(std::time::Duration::from_millis(1000));
+            sleep(Duration::from_millis(2000));
         }
 
         Ok(())
@@ -96,7 +113,11 @@ pub trait Synth<const N: usize> {
         }
     }
 
-    fn get_stream<T>(&mut self, config: &StreamConfig, device: &Device) -> anyhow::Result<Stream>
+    fn get_stream<T>(
+        &mut self,
+        config: &StreamConfig,
+        device: &Device,
+    ) -> anyhow::Result<(Stream, Arc<AtomicU64>)>
     where
         T: Sample + FromSample<f32> + SizedSample;
 }
@@ -117,7 +138,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             },
         };
         s.voice_manager
-            .update_screen(&patch_table.clone().entries[0].toml.name, "")
+            .update_screen(&s.voice_manager.get_display_title(), "")
             .unwrap();
         s
     }
@@ -134,7 +155,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let buffer_size = match buffer_size_range {
             // If the device reports a min/max range, pick a value in between
             SupportedBufferSize::Range { min, max } => {
-                let target = 390; // todo: make it configurable?
+                let target = 384; // todo: make it configurable?
                 // Clamp the target to the valid range [min, max]
                 let chosen = target.clamp(*min, *max);
                 println!(
@@ -167,60 +188,91 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
         let result = None;
         result.or(self.voice_manager.decode(msg))
     }
-    fn get_stream<T>(&mut self, config: &StreamConfig, device: &Device) -> anyhow::Result<Stream>
+    fn get_stream<T>(
+        &mut self,
+        config: &StreamConfig,
+        device: &Device,
+    ) -> anyhow::Result<(Stream, Arc<AtomicU64>)>
     where
         T: Sample + FromSample<f32> + SizedSample,
     {
+        eprintln!("stream config: {:?}", config);
+
         let sample_rate = config.sample_rate as f64;
         let mut mix = self.voice_manager.mix_net_backend();
-        mix.reset();
-        mix.set_sample_rate(sample_rate);
+
         let input_buffer = self.buffers.input.clone();
         let mut output_buffer = self.buffers.output.clone();
+
+        mix.reset();
+        mix.set_sample_rate(sample_rate);
+        mix.process(
+            MAX_BLOCK_SIZE,
+            &input_buffer.buffer_ref(),
+            &mut output_buffer.buffer_mut(),
+        );
+        mix.reset();
+
         let mut next_block = move |block: &mut [(f32, f32)], n_frames: usize| {
             mix.process(
                 n_frames,
                 &input_buffer.buffer_ref(),
                 &mut output_buffer.buffer_mut(),
             );
-            for _ in 0..n_frames {
-                for i in 0..n_frames {
-                    block[i] = (output_buffer.at_f32(0, i), output_buffer.at_f32(1, i));
-                }
+
+            for i in 0..n_frames {
+                block[i] = (output_buffer.at_f32(0, i), output_buffer.at_f32(1, i));
             }
         };
 
         let channels = config.channels as usize;
-        let block_size = 64; // FunDSP’s max block size
+        let mut block_buffer = vec![(0.0f32, 0.0f32); MAX_BLOCK_SIZE];
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
-        device
-            .build_output_stream(
-                *config,
-                move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                    write_data_block(data, channels, block_size, &mut next_block);
-                },
-                err_fn,
-                None,
-            )
-            .or_else(|err| bail!("{err:?}"))
+        // todo: add audio thread core to global config
+        let target_core = Cores::from_cmdline("1")?.ids[0];
+        let once = std::sync::Once::new();
+
+        let max_callback_ns = Arc::new(AtomicU64::new(0));
+        let max_callback_ns_clone = max_callback_ns.clone();
+
+        let stream = device.build_output_stream(
+            *config,
+            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                once.call_once(|| {
+                    target_core.set_affinity().ok();
+                    #[cfg(target_os = "linux")]
+                    unsafe {
+                        let param = libc::sched_param { sched_priority: 80 };
+                        libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+                        libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE);
+                    }
+                });
+                let start = std::time::Instant::now();
+                write_data_block(data, channels, &mut block_buffer, &mut next_block);
+                let elapsed_ns = start.elapsed().as_nanos() as u64;
+                max_callback_ns_clone.fetch_max(elapsed_ns, Ordering::Relaxed);
+            },
+            err_fn,
+            None,
+        )?;
+        Ok((stream, max_callback_ns))
     }
 }
 
 pub fn write_data_block<T: Sample + FromSample<f32>>(
     output: &mut [T],
     channels: usize,
-    block_size: usize,
+    block_buffer: &mut [(f32, f32)],
     next_block: &mut dyn FnMut(&mut [(f32, f32)], usize),
 ) {
     let frame_count = output.len() / channels;
-    let mut block_buffer = vec![(0.0f32, 0.0f32); block_size];
     let mut frames_written = 0;
 
     while frames_written < frame_count {
         let remaining = frame_count - frames_written;
-        let frames_to_gen = remaining.min(block_size);
+        let frames_to_gen = remaining.min(block_buffer.len());
 
         next_block(&mut block_buffer[..frames_to_gen], frames_to_gen);
 
@@ -433,20 +485,16 @@ impl<const N: usize> VoiceManager<N> {
             .build_synth();
         self.synth_func = new_synth;
         let new_sound_net = self.sound();
-        self.mix_net.crossfade(
-            self.sound_node_id,
-            Fade::Smooth,
-            0.01,
-            Box::new(new_sound_net),
-        );
+        // replace to avoid cpu spikes with crossfading multiple voices
+        self.mix_net
+            .replace(self.sound_node_id, Box::new(new_sound_net));
     }
 
     /// Rebuild current fx chain based on the state of the patch table - without committing.
     fn rebuild_and_replace_fx_chain(&mut self) {
         let entry = &self.patch_table.entries[self.current_patch_num].effects;
         let new_fx_net = entry.clone().build_chain(&self.states[0]);
-        self.mix_net
-            .crossfade(self.fx_node_id, Fade::Smooth, 0.5, Box::new(new_fx_net));
+        self.mix_net.replace(self.fx_node_id, Box::new(new_fx_net));
     }
 
     /// Commit patch Net changes (sound rebuilt, effects chain rebuild, etc.)
@@ -517,6 +565,13 @@ impl<const N: usize> VoiceManager<N> {
         };
         mix >> master_limiter()
     }
+    fn get_display_title(&self) -> String {
+        format!(
+            "{} {}",
+            self.current_patch_num + 1,
+            self.get_current_patch().toml.name
+        )
+    }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
         match msg {
@@ -540,7 +595,6 @@ impl<const N: usize> VoiceManager<N> {
                 ChannelVoiceMsg::ControlChange {
                     control: CC { control, value },
                 } => {
-                    //eprintln!("Control change from {:?} to {:?}", control, value);
                     // quantized to 0.0-1.0 with 0.01 steps:
                     if let Some(&(group, idx)) = self.cc_to_usize_index.get(control) {
                         let norm = *value as f32 / 127.0;
@@ -558,6 +612,7 @@ impl<const N: usize> VoiceManager<N> {
                                     cc_line = format!(
                                         "{} {}",
                                         cc_name.name.replace("_", " "),
+                                        // todo: display decoder (from_cc)
                                         (norm * 100.0).round()
                                     );
                                 };
@@ -571,7 +626,7 @@ impl<const N: usize> VoiceManager<N> {
                                     current.effects.fx_and_param_from_index(idx + 1)
                                 {
                                     cc_line = format!(
-                                        "{} {} {}%",
+                                        "{} {} {}",
                                         fx_name.to_uppercase(),
                                         shorten_cc_name(cc.name),
                                         (norm * 100.0).round()
@@ -579,7 +634,7 @@ impl<const N: usize> VoiceManager<N> {
                                 };
                             }
                         }
-                        self.update_screen(&current.toml.name, &cc_line)
+                        self.update_screen(&self.get_display_title(), &cc_line)
                             .expect("Failed to update screen");
                     } else {
                         let event = self.button_event_processor.process_event(control, value);
@@ -693,7 +748,7 @@ impl<const N: usize> VoiceManager<N> {
             self.rebuild_and_replace_sound();
             self.commit_patch_changes();
             self.apply_init_cc_vals();
-            self.update_screen(&entry.toml.name, "").unwrap();
+            self.update_screen(&self.get_display_title(), "").unwrap();
             //println!("changed to patch: {}", entry.toml.name)
         }
     }
