@@ -291,7 +291,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                     let copy_time = (t2 - t1).as_micros();
                     let total = dsp_time + copy_time;
 
-                    if total > 8000 {
+                    if total > 7000 {
                         eprintln!("SLOW: total={total} dsp={dsp_time} copy={copy_time}");
                     }
 
