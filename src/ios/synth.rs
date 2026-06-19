@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const MAX_BLOCK_SIZE: usize = 64;
 
@@ -276,24 +276,12 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                 while frames_written < frame_count {
                     let remaining = frame_count - frames_written;
                     let frames_to_gen = remaining.min(MAX_BLOCK_SIZE);
-                    let t0 = Instant::now();
+
                     mix.process(
                         frames_to_gen,
                         &input_buffer.buffer_ref(),
                         &mut output_buffer.buffer_mut(),
                     );
-                    let t1 = Instant::now();
-
-                    // copy loop...
-                    let t2 = Instant::now();
-
-                    let dsp_time = (t1 - t0).as_micros();
-                    let copy_time = (t2 - t1).as_micros();
-                    let total = dsp_time + copy_time;
-
-                    if total > 7000 {
-                        eprintln!("SLOW: total={total} dsp={dsp_time} copy={copy_time}");
-                    }
 
                     for i in 0..frames_to_gen {
                         let sample_l = output_buffer.at_f32(0, i);
