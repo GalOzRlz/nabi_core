@@ -40,20 +40,25 @@ fn run_chooser(
 ) {
     let main_menu = vec!["Pick New Synthesizer Sound", "Pick New MIDI Device", "Quit"];
     while !*quit && !reset.load() {
-        println!("Play notes at will. When ready for a change, select one of the following:");
-        match console_choice_from("Choice", &main_menu, |s| *s) {
-            0 => {
-                let program = {
-                    let patch_table = patch_table.clone();
-                    console_choice_from("Change synth to", &patch_table.entries, |opt| {
-                        opt.toml.name.as_str()
-                    })
-                };
-                midi_msgs.push(SynthMsg::patch_change(program as u8));
+        if std::env::var("NABI_HEADLESS").is_ok() {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        } else {
+            println!("Play notes at will. When ready for a change, select one of the following:");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            match console_choice_from("Choice", &main_menu, |s| *s) {
+                0 => {
+                    let program = {
+                        let patch_table = patch_table.clone();
+                        console_choice_from("Change synth to", &patch_table.entries, |opt| {
+                            opt.toml.name.as_str()
+                        })
+                    };
+                    midi_msgs.push(SynthMsg::patch_change(program as u8));
+                }
+                1 => reset.store(true),
+                2 => *quit = true,
+                _ => panic!("This should never happen."),
             }
-            1 => reset.store(true),
-            2 => *quit = true,
-            _ => panic!("This should never happen."),
         }
     }
 }
