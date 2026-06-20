@@ -3,7 +3,7 @@ use crossbeam_utils::atomic::AtomicCell;
 use midir::MidiInput;
 use nabi_core::config_builder::{GlobalConfigToml, GlobalSection, MAX_KNOBS_PER_GROUP};
 use nabi_core::ios::midi::SynthMsg;
-use nabi_core::ios::threads::{cc_mapper_handler, get_first_input_port, start_input_thread};
+use nabi_core::ios::threading::{cc_mapper_handler, get_first_input_port, start_input_thread};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
