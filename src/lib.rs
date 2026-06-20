@@ -16,6 +16,7 @@
 
 mod common;
 pub mod config_builder;
+pub mod consts;
 mod effects;
 pub mod experimental;
 mod helpers;

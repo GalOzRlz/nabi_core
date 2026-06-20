@@ -4,6 +4,7 @@ use midir::MidiInput;
 use nabi_core::config_builder::{
     create_ordered_patch_table, gather_toml_files_recursive, load_global_config,
 };
+use nabi_core::consts::VOICE_COUNT;
 use nabi_core::ios::synth::SynthMsg;
 use nabi_core::ios::threading::{get_first_input_port, start_input_thread, start_output_thread};
 use nabi_core::patch_builder::PatchTable;
@@ -22,7 +23,7 @@ fn main() -> anyhow::Result<()> {
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
         let patch_paths = gather_toml_files_recursive(&global_config.patches_path);
         let patch_table = Arc::new(create_ordered_patch_table(patch_paths, &"order.toml"));
-        start_output_thread::<6>(
+        start_output_thread::<VOICE_COUNT>(
             midi_msgs.clone(),
             patch_table.clone(),
             Option::from(global_config),

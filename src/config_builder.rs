@@ -21,22 +21,25 @@ fn default_sound_cc_vals() -> Vec<u8> {
 }
 
 // ---------- voice management enums ----------
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum VoiceStealingConfig {
     LegatoOldest,
+    #[default]
     LegatoLast,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum FreeVoiceStrategy {
+    #[default]
     FollowADSR,
     ReleaseOnZero,
 }
 
 // ---------- runtime global configuration ----------
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
 pub struct GlobalConfig {
     pub voice_stealing: VoiceStealingConfig,
     pub voice_release: FreeVoiceStrategy,
@@ -44,6 +47,7 @@ pub struct GlobalConfig {
     pub sound_cc_mapping: Vec<u8>,
     pub fx_cc_mapping: Vec<u8>,
     pub left_right_buttons: [u8; 2],
+    pub audio_cpu_core: Option<usize>,
 }
 
 impl Default for GlobalConfig {
@@ -59,6 +63,7 @@ impl Default for GlobalConfig {
                 path
             },
             left_right_buttons: [25, 26],
+            audio_cpu_core: None,
         }
     }
 }
@@ -67,61 +72,18 @@ impl Default for GlobalConfig {
 #[derive(Deserialize, Serialize)]
 pub struct GlobalConfigToml {
     #[serde(default)]
-    pub global: GlobalSection,
-}
-
-#[derive(Deserialize, Default, Serialize)]
-pub struct GlobalSection {
-    #[serde(default)]
-    pub sound_cc_mapping: Option<Vec<u8>>,
-
-    #[serde(default)]
-    pub fx_cc_mapping: Option<Vec<u8>>,
-
-    #[serde(default)]
-    synth_stealing: Option<VoiceStealingConfig>,
-
-    #[serde(default)]
-    synth_release: Option<FreeVoiceStrategy>,
-
-    #[serde(default)]
-    patches_path: Option<PathBuf>,
-
-    #[serde(default)]
-    pub left_right_buttons: Option<[u8; 2]>,
+    pub global: GlobalConfig,
 }
 
 pub fn load_global_config(path: &str) -> GlobalConfig {
-    let defaults = GlobalConfig::default();
-
     match fs::read_to_string(path) {
-        Ok(text) => match toml::from_str::<GlobalConfigToml>(&text) {
-            Ok(cfg) => GlobalConfig {
-                sound_cc_mapping: cfg
-                    .global
-                    .sound_cc_mapping
-                    .unwrap_or(defaults.sound_cc_mapping),
-                fx_cc_mapping: cfg.global.fx_cc_mapping.unwrap_or(defaults.fx_cc_mapping),
-                voice_stealing: cfg.global.synth_stealing.unwrap_or(defaults.voice_stealing),
-                voice_release: cfg.global.synth_release.unwrap_or(defaults.voice_release),
-                patches_path: cfg
-                    .global
-                    .patches_path
-                    .unwrap_or(defaults.patches_path)
-                    .to_path_buf(),
-                left_right_buttons: cfg
-                    .global
-                    .left_right_buttons
-                    .unwrap_or(defaults.left_right_buttons),
-            },
-            Err(e) => {
-                eprintln!("Warning: failed to parse midi.toml: {e}. Using defaults.");
-                defaults
-            }
-        },
+        Ok(text) => toml::from_str::<GlobalConfig>(&text).unwrap_or_else(|e| {
+            eprintln!("Warning: failed to parse midi.toml: {e}. Using defaults.");
+            GlobalConfig::default()
+        }),
         Err(_) => {
             eprintln!("midi.toml not found, using default config.");
-            defaults
+            GlobalConfig::default()
         }
     }
 }

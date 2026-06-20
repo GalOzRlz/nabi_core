@@ -239,8 +239,7 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
         let err_fn = |err| eprintln!("Error on stream: {err}");
 
-        // todo: add audio thread core to global config
-        let target_core = Cores::from_cmdline("1")?.ids[0];
+        let core_num_cfg = self.voice_manager.config.audio_cpu_core;
         let once = std::sync::Once::new();
 
         let max_callback_ns = Arc::new(AtomicU64::new(0));
@@ -250,13 +249,26 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
             *config,
             move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                 once.call_once(|| {
-                    target_core.set_affinity().ok();
+                    if let Some(core) = core_num_cfg {
+                        let target_core = Cores::from_cmdline(&format!("{}", core)).unwrap().ids[0];
+                        target_core.set_affinity().ok();
+                    };
+
                     #[cfg(target_os = "linux")]
                     {
-                        use nix::sched::{SchedParam, SchedPolicy, sched_setscheduler};
-                        let param = SchedParam { sched_priority: 80 };
-                        sched_setscheduler(nix::unistd::getpid(), SchedPolicy::SchedRR, &param)
-                            .expect("failed to set scheduler policy");
+                        use nix::sched::{Scheduler, SchedulerParams};
+                        use nix::unistd::Pid;
+                        let params = SchedulerParams {
+                            priority: Some(80),
+                            ..Default::default()
+                        };
+
+                        match Scheduler::set(Pid::this(), Scheduler::RoundRobin, &params) {
+                            Ok(_) => println!("Real-time priority set successfully"),
+                            Err(e) => {
+                                eprintln!("Warning: Failed to set real-time scheduler: {}", e)
+                            }
+                        }
                     }
                 });
 

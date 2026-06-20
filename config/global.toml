@@ -29,3 +29,9 @@ left_right_buttons = [
     25,
     26,
 ]
+
+# Orange Pi 4A (note: as with any CPU core reservations, isolcpu needs to be set for this to be a truly dedicated core)
+audio_cpu_core = 4
+
+# For Le potato:
+#audio_cpu_core = 1

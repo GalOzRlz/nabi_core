@@ -1,7 +1,7 @@
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use midir::MidiInput;
-use nabi_core::config_builder::{GlobalConfigToml, GlobalSection, MAX_KNOBS_PER_GROUP};
+use nabi_core::config_builder::{GlobalConfig, GlobalConfigToml, MAX_KNOBS_PER_GROUP};
 use nabi_core::ios::midi::SynthMsg;
 use nabi_core::ios::threading::{cc_mapper_handler, get_first_input_port, start_input_thread};
 use std::fs;
@@ -61,11 +61,21 @@ fn main() -> anyhow::Result<()> {
         left_right[1] = num;
         println!("RIGHT mapping: {:?}", num);
     }
+    println!(
+        "Which cpu core do you want to run the audio thread on? Type its number and then Enter or just press Enter to skip..."
+    );
+    let mut console_string = String::new();
+    std::io::stdin()
+        .read_line(&mut console_string)
+        .expect("problem with reading console input!");
+    let audio_cpu_core: Option<usize> = console_string.trim().parse().ok();
+
     quit_program.store(true);
-    let mut global_toml_section = GlobalSection::default();
-    global_toml_section.left_right_buttons = Option::from(left_right);
-    global_toml_section.fx_cc_mapping = Option::from(fx_cc);
-    global_toml_section.sound_cc_mapping = Option::from(sound_cc);
+    let mut global_toml_section = GlobalConfig::default();
+    global_toml_section.left_right_buttons = left_right;
+    global_toml_section.fx_cc_mapping = fx_cc;
+    global_toml_section.sound_cc_mapping = sound_cc;
+    global_toml_section.audio_cpu_core = audio_cpu_core;
     let toml = GlobalConfigToml {
         global: global_toml_section,
     };
