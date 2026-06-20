@@ -253,23 +253,23 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                         let target_core = Cores::from_cmdline(&format!("{}", core)).unwrap().ids[0];
                         target_core.set_affinity().ok();
                     };
-
                     #[cfg(target_os = "linux")]
                     {
-                        use nix::pthread::{SchedParam, pthread_setschedparam};
-                        use nix::sched::SchedPolicy;
-                        use nix::unistd::Pthread;
+                        use libc::{sched_param, sched_setscheduler, SCHED_RR};
+                        unsafe {
+                            let mut param: sched_param = std::mem::zeroed();
+                            param.sched_priority = 80; // Real-time priority (1-99)
 
-                        let param = SchedParam {
-                            sched_priority: priority,
-                        };
-
-                        let thread = unsafe { Pthread::self() };
-                        if let Err(e) =
-                            pthread_setschedparam(thread, SchedPolicy::RoundRobin, &param)
-                        {
-                            eprintln!("Failed to set real-time scheduler: {}", e);
-                        };
+                            let result = sched_setscheduler(0, SCHED_RR, &param);
+                            if result == -1 {
+                                let err = std::io::Error::last_os_error();
+                                if err.raw_os_error() == Some(1) {
+                                    eprintln!("Permission denied for real-time scheduling. Run with sudo or set CAP_SYS_NICE.");
+                                } else {
+                                    eprintln!("Failed to set real-time scheduler: {}", err);
+                                }
+                            }
+                        }
                     }
                 });
 
