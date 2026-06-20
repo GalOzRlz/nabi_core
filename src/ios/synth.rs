@@ -252,16 +252,11 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
                 once.call_once(|| {
                     target_core.set_affinity().ok();
                     #[cfg(target_os = "linux")]
-                    unsafe {
-                        let param = libc::sched_param { sched_priority: 80 };
-                        libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE);
-                        let ret = libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
-                        if ret != 0 {
-                            let err = std::io::Error::last_os_error();
-                            eprintln!("Failed to set real-time priority: {err}");
-                        } else {
-                            eprintln!("Real-time priority set successfully");
-                        }
+                    {
+                        use nix::sched::{SchedParam, SchedPolicy, sched_setscheduler};
+                        let param = SchedParam { sched_priority: 80 };
+                        sched_setscheduler(nix::unistd::getpid(), SchedPolicy::SchedRR, &param)
+                            .expect("failed to set scheduler policy");
                     }
                 });
 
