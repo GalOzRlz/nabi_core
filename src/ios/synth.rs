@@ -256,19 +256,20 @@ impl<const N: usize> Synth<N> for SynthPlayer<N> {
 
                     #[cfg(target_os = "linux")]
                     {
-                        use nix::sched::{Scheduler, SchedulerParams};
-                        use nix::unistd::Pid;
-                        let params = SchedulerParams {
-                            priority: Some(80),
-                            ..Default::default()
+                        use nix::pthread::{SchedParam, pthread_setschedparam};
+                        use nix::sched::SchedPolicy;
+                        use nix::unistd::Pthread;
+
+                        let param = SchedParam {
+                            sched_priority: priority,
                         };
 
-                        match Scheduler::set(Pid::this(), Scheduler::RoundRobin, &params) {
-                            Ok(_) => println!("Real-time priority set successfully"),
-                            Err(e) => {
-                                eprintln!("Warning: Failed to set real-time scheduler: {}", e)
-                            }
-                        }
+                        let thread = unsafe { Pthread::self() };
+                        if let Err(e) =
+                            pthread_setschedparam(thread, SchedPolicy::RoundRobin, &param)
+                        {
+                            eprintln!("Failed to set real-time scheduler: {}", e);
+                        };
                     }
                 });
 
