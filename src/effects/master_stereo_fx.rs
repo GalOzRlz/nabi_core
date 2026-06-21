@@ -2,7 +2,7 @@ use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Paramet
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
-use crate::effects::modulators::{smooth_noise_constructor, smooth_random_lfo};
+use crate::effects::pitch_modulation::{pitch_shifter, tape_wow};
 use crate::helpers::fundsp::to_net;
 use fundsp::prelude64::*;
 use linkme::distributed_slice;
@@ -23,22 +23,6 @@ fn cc_controlled_reverb(
 ) -> Net {
     let reverb = to_net(reverb_stereo(room_size, reverb_time, damping));
     cc_controlled_wet_dry_fx(wet_amount, reverb)
-}
-
-pub fn tape_wow(depth: CcAudioNode) -> Net {
-    let wow_ms_range = 0.025;
-    let flutter_ms_range = 0.0022;
-    let center = 0.030;
-    let wow_mod = smooth_random_lfo(0.6);
-    let flutter_mod = smooth_noise_constructor(smooth3, 9.0);
-    let total_wow = (wow_mod * depth.clone() + 2.0) * wow_ms_range;
-    let total_flutter = (flutter_mod * depth + 2.0) * flutter_ms_range;
-    let wet_amount = (pass() | total_wow + total_flutter)
-        >> tap_linear(
-            center - wow_ms_range - flutter_ms_range,
-            center + wow_ms_range + flutter_ms_range,
-        );
-    wet_amount.clone() | wet_amount
 }
 
 fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
@@ -182,5 +166,45 @@ static TAPE_DRIFT: EffectDef = EffectDef {
             description: None,
         }])),
         non_cc_params: None,
+    },
+};
+
+pub fn stereo_pitch_shifter(params: Arc<Parameterized>) -> EffectFunc {
+    Box::new(move |state| {
+        let grain_frequency = params.get_non_cc_param("grain_frequency").unwrap();
+        let pitch_semi_tones = params.get_non_cc_param("pitch").unwrap();
+        let amount = params.cc_fx_or_default("amount", state);
+        cc_controlled_wet_dry_fx(
+            amount,
+            to_net(pitch_shifter(pitch_semi_tones, grain_frequency)),
+        )
+    })
+}
+
+#[distributed_slice(EFFECTS)]
+static LOFI_PITCH_SHIFTER: EffectDef = EffectDef {
+    factory: tape_drift,
+    params: Parameterized {
+        name: "pitch_shifter",
+        cc_params: Some(Cow::Borrowed(&[CcParam {
+            value: ParamType::ZeroOneFloat(0.5),
+            cc_norm_index: 2,
+            name: "wet_amount",
+            description: None,
+        }])),
+        non_cc_params: Some(Cow::Borrowed(&[
+            NonCcParam {
+                value: ParamType::Float32(50.0),
+                name: "grain_frequency",
+                description: Some(
+                    "the frequency of grain population - lower means lesser quality, higher means better pitch tracking and timbre",
+                ),
+            },
+            NonCcParam {
+                value: ParamType::Float32(11.93),
+                name: "pitch",
+                description: Some("shiting pitch between -12.0 and +12.0 semitones"),
+            },
+        ])),
     },
 };
