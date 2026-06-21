@@ -37,7 +37,7 @@ pub enum ParamType {
     U8(u8),
     Oscillator(Cow<'static, str>),
     ZeroOneFloat(f32),
-    ZeroHundredFloat(f32),
+    Float32(f32),
     ADSR([f32; 4]),
     Noise(Cow<'static, str>),
 }
@@ -48,7 +48,7 @@ fn cc_to_param(param_type: &ParamType, v: f32) -> ParamType {
             panic!("Parameter has no possible cc value!")
         }
         &ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
-        &ParamType::ZeroHundredFloat(_) => ParamType::ZeroHundredFloat((v) * 10.0),
+        &ParamType::Float32(_) => ParamType::Float32((v) * 10.0),
     }
 }
 
@@ -57,7 +57,7 @@ impl ParamType {
         match self {
             ParamType::U8(a) => Value::Integer(*a as i64),
             ParamType::Oscillator(a) | ParamType::Noise(a) => Value::String(a.to_string()),
-            ParamType::ZeroOneFloat(a) | ParamType::ZeroHundredFloat(a) => Value::Float(*a as f64),
+            ParamType::ZeroOneFloat(a) | ParamType::Float32(a) => Value::Float(*a as f64),
             ParamType::ADSR(array) => Value::Array(
                 array
                     .to_vec()
@@ -81,7 +81,7 @@ impl ParamType {
             ParamType::Oscillator(_) => Err(anyhow!("ParamType::Oscillator has no numeric value!")),
             ParamType::ADSR(_) => Err(anyhow!("ParamType::ADSR has no numeric value!")),
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
-            ParamType::ZeroHundredFloat(v) => Ok((*v / 100.0).clamp(0.0, 1.0)), // scale to 0.0-1.0
+            ParamType::Float32(v) => Ok((*v / 100.0).clamp(0.0, 1.0)), // scale to 0.0-1.0
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
         }
     }
@@ -92,7 +92,7 @@ impl ParamType {
             ParamType::Oscillator(_) => Err(anyhow!("ParamType::Oscillator has no numeric value!")),
             ParamType::ADSR(_) => Err(anyhow!("ParamType::ADSR has no numeric value!")),
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
-            ParamType::ZeroHundredFloat(v) => Ok(*v),
+            ParamType::Float32(v) => Ok(*v),
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
         }
     }
@@ -111,7 +111,7 @@ impl std::fmt::Display for ParamType {
             ParamType::U8(v) => write!(f, "{}", v),
             ParamType::Oscillator(s) => write!(f, "{}", s),
             ParamType::ZeroOneFloat(v) => write!(f, "{}", v),
-            ParamType::ZeroHundredFloat(v) => write!(f, "{}", v),
+            ParamType::Float32(v) => write!(f, "{}", v),
             ParamType::ADSR(v) => write!(f, "{:?}", v),
             ParamType::Noise(v) => write!(f, "{:?}", v),
         }
@@ -210,7 +210,7 @@ impl Parameterized {
         }
     }
 
-    pub fn get_cc_param(&self, name: &str) -> anyhow::Result<&CcParam> {
+    fn get_cc_param(&self, name: &str) -> anyhow::Result<&CcParam> {
         if let Some(vec) = &self.cc_params {
             for i in vec.iter() {
                 if i.name == name {
@@ -313,7 +313,7 @@ where
     for param in params {
         if let Some(toml_value) = toml_overrides.get(param.get_name()) {
             match param.get_mut() {
-                ParamType::ZeroOneFloat(v) | ParamType::ZeroHundredFloat(v) => {
+                ParamType::ZeroOneFloat(v) | ParamType::Float32(v) => {
                     if let Some(num) = toml_value.as_float() {
                         *v = num as f32;
                     }
@@ -451,7 +451,9 @@ impl OscillatorType {
                 stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node()))
             }
             OscillatorType::None => stereo_to_mono_unit(Box::new(pw_sinker >> sine() * 0.0)),
-            _ => panic!("Type cannot accept any inputs - therefore cannot force it to receive "),
+            OscillatorType::WaveTable(s) => {
+                stereo_to_mono_unit(Box::new(pw_sinker >> *Self::wavetable_synth_from_path(&s)))
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::params::ParamType::{ADSR, Oscillator, U8, ZeroHundredFloat};
+use crate::common::params::ParamType::{ADSR, Float32, Oscillator, U8};
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::helpers::fundsp::to_net;
 use crate::sound_engine::common::cc_unidirectional_spread_step;
@@ -81,7 +81,7 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 description: None,
             },
             NonCcParam {
-                value: ZeroHundredFloat(5.5),
+                value: Float32(5.5),
                 name: "max_spread_hz",
                 description: Some(
                     "The maximal frequency for unidirectional spreading (e.g., 20hz means between -20hz and +20hz)",

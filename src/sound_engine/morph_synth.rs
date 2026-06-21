@@ -101,7 +101,7 @@ static MORPH2: SoundFactory = SoundFactory {
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroHundredFloat(7.0),
+                value: ParamType::Float32(7.0),
                 cc_norm_index: 0,
                 name: "fm_ratio",
                 description: None,
