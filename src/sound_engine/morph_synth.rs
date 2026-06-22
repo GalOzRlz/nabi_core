@@ -1,8 +1,8 @@
 use crate::SharedMidiState;
 use crate::common::fm::FmConnector;
+use crate::common::fundsp::to_net;
 use crate::common::helpers::quantize_01_decimal;
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
-use crate::helpers::fundsp::to_net;
 use crate::sound_engine::common::detune_map_semitone;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;

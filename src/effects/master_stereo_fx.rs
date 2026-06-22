@@ -1,10 +1,10 @@
 use crate::common::adapters::StereoStaticParamsWrapper;
+use crate::common::fundsp::to_net;
 use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
 use crate::effects::pitch_modulation::{pitch_shifter, tape_wow};
-use crate::helpers::fundsp::to_net;
 use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
@@ -70,23 +70,7 @@ static REVERB: EffectDef = EffectDef {
                 description: None,
             },
         ])),
-        non_cc_params: Some(Cow::Borrowed(&[
-            NonCcParam {
-                value: ParamType::Float32(8.0),
-                name: "room_size",
-                description: None,
-            },
-            NonCcParam {
-                value: ParamType::ZeroOneFloat(0.55),
-                name: "damping",
-                description: None,
-            },
-            NonCcParam {
-                value: ParamType::Float32(4.35),
-                name: "length",
-                description: None,
-            },
-        ])),
+        non_cc_params: None,
     },
 };
 

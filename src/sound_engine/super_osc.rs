@@ -1,7 +1,7 @@
 use crate::SharedMidiState;
+use crate::common::fundsp::to_net;
 use crate::common::params::ParamType::{ADSR, Float32, Oscillator, U8};
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
-use crate::helpers::fundsp::to_net;
 use crate::sound_engine::common::cc_unidirectional_spread_step;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;

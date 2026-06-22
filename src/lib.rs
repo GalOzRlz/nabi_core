@@ -18,7 +18,6 @@ mod common;
 pub mod config_builder;
 mod effects;
 pub mod experimental;
-mod helpers;
 pub mod ios;
 pub mod patch_builder;
 mod sound_engine;
@@ -27,7 +26,7 @@ mod tuning;
 
 use crate::common::params::{CcArray, CcAudioNode, CcParam};
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
-use crate::helpers::cc::cc_smooth;
+use common::cc::cc_smooth;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};

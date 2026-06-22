@@ -1,7 +1,7 @@
 use crate::SharedMidiState;
+use crate::common::fundsp::to_net;
 use crate::common::helpers::{quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
-use crate::helpers::fundsp::to_net;
 use anyhow::anyhow;
 use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
@@ -48,7 +48,7 @@ fn cc_to_param(param_type: &ParamType, v: f32) -> ParamType {
             panic!("Parameter has no possible cc value!")
         }
         &ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
-        &ParamType::Float32(_) => ParamType::Float32((v) * 10.0),
+        &ParamType::Float32(_) => ParamType::Float32(v * 10.0),
     }
 }
 
