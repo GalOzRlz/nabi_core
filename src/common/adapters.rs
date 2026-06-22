@@ -16,14 +16,15 @@ type GenericStereoToN<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Syn
 ///
 /// ### Example
 /// ```
-/// let full_cc_reverb = StereoStaticParamsWrapper::<6>::new(Arc::new(
-/// move |args: [f32; 6]| {
-/// /// args[0], args[1] are audio (ignored here, but still passed through)
-/// reverb_stereo(args[2], args[3], args[4], args[5])
+/// let reverb_builder = StereoStaticParamsWrapper::<5>::new(Arc::new(
+///  |args: [f32; 6]| {
+/// /// args[0], args[1] are audio (ignored here, but still passed through - N being the target input count)
+/// reverb_stereo(args[2], args[3], args[4])
 /// }
 /// ));
+/// let reverb_adapter = An(StereoStaticParamsWrapper::new(reverb_builder));
 /// /// all inputs are now piped into the wrapper!
-/// ( pass() | pass() | cc_1 | cc_2 |cc_3 | cc_4) >> full_cc_reverb
+/// ( pass() | pass() | cc_1 | cc_2 |cc_3 ) >> reverb_adapter
 /// ```
 #[derive(Clone)]
 pub struct StereoStaticParamsWrapper<const N: usize> {
@@ -34,7 +35,7 @@ pub struct StereoStaticParamsWrapper<const N: usize> {
 }
 
 impl<const N: usize> StereoStaticParamsWrapper<N> {
-    fn new(inner: GenericStereoToN<N>) -> Self {
+    pub(crate) fn new(inner: GenericStereoToN<N>) -> Self {
         StereoStaticParamsWrapper {
             inner,
             params_temp: [0.0; N],

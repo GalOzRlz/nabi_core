@@ -1,3 +1,4 @@
+use crate::common::adapters::StereoStaticParamsWrapper;
 use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
@@ -17,26 +18,23 @@ pub fn master_limiter() -> Net {
 
 fn cc_controlled_reverb(
     wet_amount: CcAudioNode,
-    reverb_time: f32,
-    room_size: f32,
-    damping: f32,
+    reverb_time: CcAudioNode,
+    room_size: CcAudioNode,
+    damping: CcAudioNode,
 ) -> Net {
-    let reverb = to_net(reverb_stereo(room_size, reverb_time, damping));
-    cc_controlled_wet_dry_fx(wet_amount, reverb)
+    let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
+    let reverb_adapter = An(StereoStaticParamsWrapper::new(reverb_builder));
+    let reverb = (pass() | pass() | room_size | reverb_time | damping) >> reverb_adapter;
+    cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
 
 fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
-        let room_size_param = params.get_non_cc_param("room_size").unwrap();
-        let damping_param = params.get_non_cc_param("damping").unwrap();
-        let length_param = params.get_non_cc_param("length").unwrap();
+        let room_size_param = params.cc_fx_or_default("room_size", state);
+        let damping_param = params.cc_fx_or_default("damping", state);
+        let length_param = params.cc_fx_or_default("length", state);
         let wet_amount = params.cc_fx_or_default("wet_amount", state);
-        cc_controlled_reverb(
-            wet_amount,
-            length_param.value.as_f32().unwrap(),
-            room_size_param.value.as_f32().unwrap(),
-            damping_param.value.as_zero_to_one_f32().unwrap(),
-        )
+        cc_controlled_reverb(wet_amount, length_param, room_size_param, damping_param)
     })
 }
 
@@ -45,12 +43,32 @@ static REVERB: EffectDef = EffectDef {
     factory: fundsp_reverb_factory,
     params: Parameterized {
         name: "reverb",
-        cc_params: Some(Cow::Borrowed(&[CcParam {
-            value: ParamType::ZeroOneFloat(0.35),
-            cc_norm_index: 1,
-            name: "wet_amount",
-            description: None,
-        }])),
+        cc_params: Some(Cow::Borrowed(&[
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.35),
+                cc_norm_index: 1,
+                name: "wet_amount",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::Float32(4.0),
+                cc_norm_index: 0,
+                name: "room_size",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.55),
+                cc_norm_index: 0,
+                name: "damping",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::Float32(2.0),
+                cc_norm_index: 0,
+                name: "length",
+                description: None,
+            },
+        ])),
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
                 value: ParamType::Float32(8.0),
@@ -183,7 +201,7 @@ pub fn stereo_pitch_shifter(params: Arc<Parameterized>) -> EffectFunc {
 
 #[distributed_slice(EFFECTS)]
 static LOFI_PITCH_SHIFTER: EffectDef = EffectDef {
-    factory: tape_drift,
+    factory: stereo_pitch_shifter,
     params: Parameterized {
         name: "pitch_shifter",
         cc_params: Some(Cow::Borrowed(&[CcParam {
