@@ -1,6 +1,7 @@
 use fundsp::audionode::AudioNode;
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
+use fundsp::numeric_array::generic_array::arr;
 use fundsp::typenum::{Const, ToUInt, U, U2};
 use fundsp::{Frame, Size};
 use std::sync::Arc;
@@ -67,6 +68,7 @@ where
     const ID: u64 = 60000;
     type Inputs = U<N>;
     type Outputs = U2;
+
     fn reset(&mut self) {
         self.effect.reset();
     }
@@ -75,11 +77,11 @@ where
         self.effect.set_sample_rate(sample_rate);
     }
 
-    fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, U2> {
-        let mut output = [0.0f32; 2];
+    fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, Self::Outputs> {
+        let mut output = arr![0.0f32; U2];
         self.process_cc_events(input);
         // By convention 0, 1 slots will be stereo audio
         self.effect.tick(&input[0..2], &mut output);
-        Frame::from(output).into()
+        Frame::from(output)
     }
 }
