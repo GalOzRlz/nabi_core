@@ -88,9 +88,5 @@ impl KeyboardDisplay {
 }
 
 pub fn shorten_cc_name(name: &str) -> &str {
-    // todo: something better..
-    if name.len() > 14 {
-        return name.split('_').next().unwrap_or(&name[0..14]);
-    }
-    name
+    name.split('_').next().unwrap_or(name)
 }

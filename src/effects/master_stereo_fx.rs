@@ -24,7 +24,8 @@ fn cc_controlled_reverb(
 ) -> Net {
     let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
     let reverb_adapter = An(StereoStaticParamsWrapper::new(reverb_builder));
-    let reverb = (pass() | pass() | room_size | reverb_time | damping) >> reverb_adapter;
+    let reverb =
+        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> reverb_adapter;
     cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
 
@@ -52,19 +53,19 @@ static REVERB: EffectDef = EffectDef {
             },
             CcParam {
                 value: ParamType::Float32(4.0),
-                cc_norm_index: 0,
+                cc_norm_index: 2,
                 name: "room_size",
                 description: None,
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.55),
-                cc_norm_index: 0,
+                cc_norm_index: 3,
                 name: "damping",
                 description: None,
             },
             CcParam {
                 value: ParamType::Float32(2.0),
-                cc_norm_index: 0,
+                cc_norm_index: 4,
                 name: "length",
                 description: None,
             },
