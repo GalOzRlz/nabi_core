@@ -36,3 +36,4 @@ nix = "0.31.3"
 
 [features]
 profile-callback = []
+experimental = []
