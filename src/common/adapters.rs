@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>;
 
-/// Generic wrapper for M-output effects (where first 0..<M inputs are mapped for audio) which have only f32 params in their signature.
-/// A convenience closure that assembles the effect from an array of N ( M audio inputs + function params controlled by cc)
+/// Generic wrapper for M-output nets (where first 0..<M inputs are mapped for audio) which have only f32 params in their signature.
+/// A convenience closure that assembles the net from an array of N ( M audio inputs + function params controlled by cc)
 /// which can then be changed via Net::pipe.
-/// This allows for modulation (e.g., cc Shared type) to change the effect on the fly - with the effect being rebuilt only when needed.
+/// This allows for modulation (e.g., cc Shared type) to change the net on the fly - with the net being rebuilt only when needed.
 /// By convention [0..<M] of the inputs are reserved for audio and the rest of N will be the params, in the order in which the closure expects.
 ///
 /// M = 1 means mono,
@@ -35,8 +35,8 @@ type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>
 #[derive(Clone)]
 pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
     inner: GenericNetFunc<N>,
-    effect: Net,
-    effects_node_id: NodeId,
+    net: Net,
+    nets_node_id: NodeId,
     params_state: [f32; N],
     params_temp: [f32; N],
     process_cooldown_counter: usize,
@@ -49,8 +49,8 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             inner,
             params_temp: [0.0; N],
             params_state: [0.0; N],
-            effect: Net::new(M, M),
-            effects_node_id: NodeId::new(),
+            net: Net::new(M, M),
+            nets_node_id: NodeId::new(),
             process_cooldown_counter: 0,
             process_calls_threshold: 8000,
         };
@@ -58,7 +58,7 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             N - M <= M,
             "number of total inputs cannot be the same/lower as the number of outputs!"
         );
-        s.effects_node_id = s.effect.chain(Box::new((s.inner)(s.params_temp)));
+        s.nets_node_id = s.net.chain(Box::new((s.inner)(s.params_temp)));
         s
     }
 }
@@ -86,8 +86,8 @@ where
             && self.process_calls_threshold <= self.process_cooldown_counter
         {
             // todo: need to check this doesn't drag too much on sbc
-            self.effect.crossfade(
-                self.effects_node_id,
+            self.net.crossfade(
+                self.nets_node_id,
                 Fade::Smooth,
                 0.01,
                 Box::new((self.inner)(self.params_temp)),
@@ -112,18 +112,18 @@ where
     type Outputs = U<M>;
 
     fn reset(&mut self) {
-        self.effect.reset();
+        self.net.reset();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.effect.set_sample_rate(sample_rate);
+        self.net.set_sample_rate(sample_rate);
     }
 
     fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, Self::Outputs> {
         let mut output = GenericArray::generate(|_| 0.0f32);
         self.process_cc_events(input);
         // By convention 0, 1 slots will be stereo audio
-        self.effect.tick(&input[0..M], &mut output);
+        self.net.tick(&input[0..M], &mut output);
         Frame::from(output)
     }
 }
