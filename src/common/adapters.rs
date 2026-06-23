@@ -15,8 +15,8 @@ type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>
 /// This allows for modulation of otherwise static parameters on the fly - with the net being rebuilt only when needed (with jittering).
 /// By convention [0..<M] of the inputs are reserved for audio and the rest of N will be the params, in the order in which the closure expects.
 ///
-/// M = 1 means mono,
-/// M = 2 means stereo, etc.
+/// M = 1 means mono Net,
+/// M = 2 means stereo Net, etc.
 ///
 /// N signifies the total number of inputs via pipe (>>) while M is the output arity (1 = U1, etc.)
 /// ### Example
@@ -55,7 +55,7 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             process_calls_threshold: 8000, // around 0.18 seconds for param to stabilize
         };
         assert!(
-            N - M <= 0,
+            N - M > 0,
             "number of total inputs cannot be the same/lower as the number of outputs!"
         );
         s.nets_node_id = s.net.chain(Box::new((s.inner)(s.params_temp)));
@@ -85,11 +85,10 @@ where
         if self.params_temp != self.params_state
             && self.process_calls_threshold <= self.process_cooldown_counter
         {
-            // todo: need to check this doesn't drag too much on sbc
             self.net.crossfade(
                 self.nets_node_id,
                 Fade::Smooth,
-                0.01,
+                0.001,
                 Box::new((self.inner)(self.params_temp)),
             );
             self.params_state = self.params_temp;
