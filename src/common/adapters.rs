@@ -52,7 +52,7 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             net: Net::new(M, M),
             nets_node_id: NodeId::new(),
             process_cooldown_counter: 0,
-            process_calls_threshold: 8000, // around 0.18 seconds for param to stabilize
+            process_calls_threshold: 8000, // around 0.18 seconds for CC values to stabilize
         };
         assert!(
             N - M > 0,
@@ -71,7 +71,6 @@ where
 {
     fn process_cc_events(&mut self, input: &Frame<f32, U<N>>) {
         let mut new_params = [0.0; N];
-        // By convention 0, 1 slots will be stereo audio
         for i in M..N {
             new_params[i] = input[i];
         }
@@ -121,7 +120,6 @@ where
     fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, Self::Outputs> {
         let mut output = GenericArray::generate(|_| 0.0f32);
         self.process_cc_events(input);
-        // By convention 0, 1 slots will be stereo audio
         self.net.tick(&input[0..M], &mut output);
         Frame::from(output)
     }
