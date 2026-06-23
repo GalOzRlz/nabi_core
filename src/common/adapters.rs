@@ -123,7 +123,7 @@ where
         let mut output = GenericArray::generate(|_| 0.0f32);
         self.process_cc_events(input);
         // By convention 0, 1 slots will be stereo audio
-        self.effect.tick(&input[0..2], &mut output);
+        self.effect.tick(&input[0..M], &mut output);
         Frame::from(output)
     }
 }
