@@ -10,9 +10,9 @@ use std::sync::Arc;
 type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>;
 
 /// Generic wrapper for M-output nets (where first 0..<M inputs are mapped for audio) which have only f32 params in their signature.
-/// A convenience closure that assembles the net from an array of N ( M audio inputs + function params controlled by cc)
-/// which can then be changed via Net::pipe.
-/// This allows for modulation (e.g., cc Shared type) to change the net on the fly - with the net being rebuilt only when needed.
+/// A convenience closure that assembles the net from an array of N ( M audio outputs + static parameters)
+/// is provided - which can then be changed via Net::pipe (usually for CC control of static parameters).
+/// This allows for modulation of otherwise static parameters on the fly - with the net being rebuilt only when needed (with jittering).
 /// By convention [0..<M] of the inputs are reserved for audio and the rest of N will be the params, in the order in which the closure expects.
 ///
 /// M = 1 means mono,
@@ -52,7 +52,7 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             net: Net::new(M, M),
             nets_node_id: NodeId::new(),
             process_cooldown_counter: 0,
-            process_calls_threshold: 8000,
+            process_calls_threshold: 8000, // around 0.18 seconds for param to stabilize
         };
         assert!(
             N - M <= 0,
