@@ -1,8 +1,10 @@
-use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized, ToNet};
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::fundsp::to_net;
+use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
-use crate::helpers::fundsp::to_net;
+use crate::effects::pitch_modulation::{pitch_shifter, tape_wow};
 use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
@@ -14,54 +16,26 @@ pub fn master_limiter() -> Net {
     to_net(master)
 }
 
-fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32, room_size: f32, damping: f32) -> Net {
-    let reverb = to_net(reverb_stereo(room_size, reverb_time, damping));
-    cc_controlled_wet_dry_fx(wet_amount, reverb)
+fn cc_controlled_reverb(
+    wet_amount: CcAudioNode,
+    reverb_time: CcAudioNode,
+    room_size: CcAudioNode,
+    damping: CcAudioNode,
+) -> Net {
+    let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
+    let reverb_adapter = An(StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder));
+    let reverb =
+        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> reverb_adapter;
+    cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
-//
-// pub fn tape_wow(depth: Net) -> Net {
-//     let wow_ms_range = 0.025;
-//     let flutter_ms_range = 0.0022;
-//     let center = 0.030;
-//     let wow_mod = smooth_random_lfo(0.6);
-//     let flutter_mod = smooth_noise_constructor(smooth3, 9.0);
-//     let total_wow = (wow_mod * depth.clone() + 2.0) * wow_ms_range;
-//     let total_flutter = (flutter_mod * depth + 2.0) * flutter_ms_range;
-//     let wet_amount = (pass() | total_wow + total_flutter)
-//         >> tap_linear(
-//             center - wow_ms_range - flutter_ms_range,
-//             center + wow_ms_range + flutter_ms_range,
-//         );
-//     Net::wrap(Box::new(wet_amount.clone() | wet_amount))
-// }
-//
-// pub fn tape_effect_factory(_params: &NoParams, cc_map: &HashMap<String, usize>) -> EffectFunc {
-//     let depth_val = *cc_map.get("depth").unwrap_or(&0);
-//     Box::new(move |state| {
-//         let depth_net = to_net(state.get_fx_net_or_default(depth_val, 0.32));
-//         tape_wow(depth_net)
-//     })
-// }
-
-// register_effect!(
-//     name: "tape_drift",
-//     params: NoParams,
-//     factory: tape_effect_factory,
-//     cc_params: [("depth", 2)]
-// );
 
 fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
-        let room_size_param = params.get_non_cc_param("room_size").unwrap();
-        let damping_param = params.get_non_cc_param("damping").unwrap();
-        let length_param = params.get_non_cc_param("length").unwrap();
+        let room_size_param = params.cc_fx_or_default("room_size", state);
+        let damping_param = params.cc_fx_or_default("damping", state);
+        let length_param = params.cc_fx_or_default("length", state);
         let wet_amount = params.cc_fx_or_default("wet_amount", state);
-        cc_controlled_reverb(
-            wet_amount.to_net(),
-            length_param.value.as_f32().unwrap(),
-            room_size_param.value.as_f32().unwrap(),
-            damping_param.value.as_zero_to_one_f32().unwrap(),
-        )
+        cc_controlled_reverb(wet_amount, length_param, room_size_param, damping_param)
     })
 }
 
@@ -70,73 +44,170 @@ static REVERB: EffectDef = EffectDef {
     factory: fundsp_reverb_factory,
     params: Parameterized {
         name: "reverb",
-        cc_params: Some(Cow::Borrowed(&[CcParam {
-            value: ParamType::ZeroOneFloat(0.35),
-            cc_norm_index: 1,
-            name: "wet_amount",
-            description: None,
-        }])),
-        non_cc_params: Some(Cow::Borrowed(&[
-            NonCcParam {
-                value: ParamType::ZeroHundredFloat(8.0),
+        cc_params: Some(Cow::Borrowed(&[
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.35),
+                cc_norm_index: 1,
+                name: "wet_amount",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::Float32(4.0),
+                cc_norm_index: 2,
                 name: "room_size",
                 description: None,
             },
-            NonCcParam {
+            CcParam {
                 value: ParamType::ZeroOneFloat(0.55),
+                cc_norm_index: 3,
                 name: "damping",
                 description: None,
             },
-            NonCcParam {
-                value: ParamType::ZeroHundredFloat(4.35),
+            CcParam {
+                value: ParamType::Float32(2.0),
+                cc_norm_index: 4,
                 name: "length",
                 description: None,
+            },
+        ])),
+        non_cc_params: None,
+    },
+};
+
+fn eq2(params: Arc<Parameterized>) -> EffectFunc {
+    Box::new(move |state| {
+        let lowpass_cutoff = params.cc_fx_or_default("lowpass_cutoff", state);
+        let lowpass_q = params.cc_fx_or_default("lowpass_q", state);
+        let highpass_cutoff = params.cc_fx_or_default("highpass_cutoff", state);
+        let highpass_q = params.cc_fx_or_default("highpass_q", state);
+
+        let lp_max_frequency = params
+            .get_non_cc_param("lp_max_frequency")
+            .unwrap()
+            .value
+            .as_f32()
+            .unwrap();
+        let hp_max_frequency = params
+            .get_non_cc_param("hp_max_frequency")
+            .unwrap()
+            .value
+            .as_f32()
+            .unwrap();
+
+        let lowpass_cutoff = product(constant(lp_max_frequency), lowpass_cutoff);
+        let highpass_cutoff = product(constant(hp_max_frequency), highpass_cutoff);
+
+        let lp = (pass() | lowpass_cutoff | lowpass_q) >> moog();
+        let hp = (pass() | highpass_cutoff | highpass_q) >> highpass();
+
+        to_net(multipass::<U2>() >> (lp.clone() | lp) >> (hp.clone() | hp))
+    })
+}
+
+#[distributed_slice(EFFECTS)]
+static EQ2: EffectDef = EffectDef {
+    factory: eq2,
+    params: Parameterized {
+        name: "eq2",
+        cc_params: Some(Cow::Borrowed(&[
+            CcParam {
+                value: ParamType::ZeroOneFloat(1.0),
+                cc_norm_index: 4,
+                name: "lowpass_cutoff",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.6),
+                cc_norm_index: 0,
+                name: "lowpass_q",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.0),
+                cc_norm_index: 3,
+                name: "highpass_cutoff",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.35),
+                cc_norm_index: 0,
+                name: "lowpass_q",
+                description: None,
+            },
+        ])),
+        non_cc_params: Some(Cow::Borrowed(&[
+            NonCcParam {
+                value: ParamType::Float32(15_000.0),
+                name: "lp_max_frequency",
+                description: Some("The top frequency the high-cut will go to"),
+            },
+            NonCcParam {
+                value: ParamType::Float32(8_000.0),
+                name: "hp_max_frequency",
+                description: Some("The top frequency the low-cut will go to"),
             },
         ])),
     },
 };
 
-// fn master_lowpass(cc: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
-//     let cutoff_val = shared_midi_state.get_fx_net_or_default(cc, 1.0);
-//     let cutoff_hrz = product(constant(20_000.0), cutoff_val);
-//     Net::wrap(Box::new(
-//         (pass() | cutoff_hrz >> follow(0.05_f32)) >> moog_q(q),
-//     ))
-// }
-//
-// fn master_highpass(cc: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
-//     let cutoff_val = shared_midi_state.get_fx_net_or_default(cc, 0.0);
-//     let cutoff_hrz = product(constant(8_000.0), cutoff_val);
-//     Net::wrap(Box::new(
-//         (pass() | cutoff_hrz >> follow(0.05_f32)) >> highpass_q(q),
-//     ))
-// }
-//
-// fn eq_2(
-//     low_cut_cc: usize,
-//     high_cut_cc: usize,
-//     lp_q: f32,
-//     hp_q: f32,
-//     shared_midi_state: &SharedMidiState,
-// ) -> Net {
-//     let hp = master_highpass(low_cut_cc, shared_midi_state, hp_q.clamp(0.0, 1.3));
-//     let lp = master_lowpass(high_cut_cc, shared_midi_state, lp_q.clamp(0.0, 1.3));
-//     multipass::<U2>() >> (lp.clone() | lp) >> (hp.clone() | hp)
-// }
-//
-// fn eq_2_factory(params: &Eq2Params, cc_map: &HashMap<String, usize>) -> EffectFunc {
-//     let lp_q = params.lp_q;
-//     let hp_q = params.hp_q;
-//     let low_cut = *cc_map.get("lowcut").unwrap_or(&0);
-//     let high_cut = *cc_map.get("highcut").unwrap_or(&0);
-//     Box::new(move |state| eq_2(low_cut, high_cut, lp_q, hp_q, state))
-// }
+pub fn tape_drift(params: Arc<Parameterized>) -> EffectFunc {
+    Box::new(move |state| {
+        let depth_net = params.cc_fx_or_default("drift_depth", state);
+        tape_wow(depth_net)
+    })
+}
 
-// register_effect!(
-//     name: "eq2",
-//     params: Eq2Params,
-//     factory: eq_2_factory,
-//     cc_params: [("lowcut", 3), ("highcut", 4)]
-// );
+#[distributed_slice(EFFECTS)]
+static TAPE_DRIFT: EffectDef = EffectDef {
+    factory: tape_drift,
+    params: Parameterized {
+        name: "tape_drift",
+        cc_params: Some(Cow::Borrowed(&[CcParam {
+            value: ParamType::ZeroOneFloat(0.35),
+            cc_norm_index: 2,
+            name: "wet_amount",
+            description: None,
+        }])),
+        non_cc_params: None,
+    },
+};
 
-// todo: add separate high and low as well - filter type selection with enum
+pub fn stereo_pitch_shifter(params: Arc<Parameterized>) -> EffectFunc {
+    Box::new(move |state| {
+        let grain_frequency = params.get_non_cc_param("grain_frequency").unwrap();
+        let pitch_semi_tones = params.get_non_cc_param("pitch").unwrap();
+        let amount = params.cc_fx_or_default("amount", state);
+        cc_controlled_wet_dry_fx(
+            amount,
+            to_net(pitch_shifter(pitch_semi_tones, grain_frequency)),
+        )
+    })
+}
+
+#[distributed_slice(EFFECTS)]
+static LOFI_PITCH_SHIFTER: EffectDef = EffectDef {
+    factory: stereo_pitch_shifter,
+    params: Parameterized {
+        name: "pitch_shifter",
+        cc_params: Some(Cow::Borrowed(&[CcParam {
+            value: ParamType::ZeroOneFloat(0.5),
+            cc_norm_index: 2,
+            name: "wet_amount",
+            description: None,
+        }])),
+        non_cc_params: Some(Cow::Borrowed(&[
+            NonCcParam {
+                value: ParamType::Float32(50.0),
+                name: "grain_frequency",
+                description: Some(
+                    "the frequency of grain population - lower means lesser quality, higher means better pitch tracking and timbre",
+                ),
+            },
+            NonCcParam {
+                value: ParamType::Float32(11.93),
+                name: "pitch",
+                description: Some("shiting pitch between -12.0 and +12.0 semitones"),
+            },
+        ])),
+    },
+};

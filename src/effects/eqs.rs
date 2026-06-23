@@ -1,7 +1,11 @@
+use fundsp::audionode::Chain;
 use fundsp::combinator::An;
 use fundsp::net::Net;
 use fundsp::prelude32::Var;
-use fundsp::prelude64::{butterpass, constant, follow, lowpass_q, pass, product};
+use fundsp::prelude64::{
+    BellMode, FixedSvf, U5, bell_hz, butterpass, constant, db_amp, follow, lowpass_q, pass, pipei,
+    product,
+};
 
 pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
     let cutoff_hrz = product(constant(max_cutoff_hz), cutoff_val);
@@ -12,4 +16,8 @@ pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
 
 pub fn prophet_lowpass_filter() -> Net {
     Net::wrap(Box::new(!butterpass() >> butterpass()))
+}
+
+fn eq5() -> An<Chain<U5, FixedSvf<f64, BellMode<f64>>>> {
+    pipei::<U5, _, _>(|i| bell_hz(500.0 + 2000.0 * i as f32, 1.0, db_amp(0.0)))
 }

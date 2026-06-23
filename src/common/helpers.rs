@@ -16,6 +16,10 @@ pub fn to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U1, U1>> {
     unit::<U1, U1>(audiounit)
 }
 
+pub fn to_stereo_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U2, U2>> {
+    unit::<U2, U2>(audiounit)
+}
+
 pub fn stereo_to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U2, U1>> {
     unit::<U2, U1>(audiounit)
 }
