@@ -55,7 +55,7 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             process_calls_threshold: 8000,
         };
         assert!(
-            N - M <= M,
+            N - M <= 0,
             "number of total inputs cannot be the same/lower as the number of outputs!"
         );
         s.nets_node_id = s.net.chain(Box::new((s.inner)(s.params_temp)));
