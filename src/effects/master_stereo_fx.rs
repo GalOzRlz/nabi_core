@@ -1,4 +1,4 @@
-use crate::common::adapters::StereoStaticParamsWrapper;
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
@@ -23,7 +23,7 @@ fn cc_controlled_reverb(
     damping: CcAudioNode,
 ) -> Net {
     let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
-    let reverb_adapter = An(StereoStaticParamsWrapper::new(reverb_builder));
+    let reverb_adapter = An(StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder));
     let reverb =
         (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> reverb_adapter;
     cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))

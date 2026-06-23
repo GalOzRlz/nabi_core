@@ -1,35 +1,40 @@
 use fundsp::audionode::AudioNode;
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
-use fundsp::numeric_array::generic_array::arr;
+use fundsp::numeric_array::generic_array::GenericArray;
 use fundsp::prelude64::{Fade, NodeId};
-use fundsp::typenum::{Const, ToUInt, U, U2};
-use fundsp::{Frame, Size};
+use fundsp::typenum::{Const, ToUInt, U};
+use fundsp::{Frame, GenericSequence, Size};
 use std::sync::Arc;
 
-type GenericStereoToN<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>;
+type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>;
 
-/// Generic wrapper for stereo effects (where input 0 and 1 are mapped for audio) which have only f32 params in their signature.
-/// A convenience closure that assembles the effect from an array of N ( 2 audio inputs + function params controlled by cc)
+/// Generic wrapper for M-output effects (where first 0..<M inputs are mapped for audio) which have only f32 params in their signature.
+/// A convenience closure that assembles the effect from an array of N ( M audio inputs + function params controlled by cc)
 /// which can then be changed via Net::pipe.
 /// This allows for modulation (e.g., cc Shared type) to change the effect on the fly - with the effect being rebuilt only when needed.
-/// By convention 0,1 inputs are audio and the rest will be the params, in the order that the closure expects them to appear.
+/// By convention [0..<M] of the inputs are reserved for audio and the rest of N will be the params, in the order in which the closure expects.
 ///
+/// M = 1 means mono,
+/// M = 2 means stereo, etc.
+///
+/// N signifies the total number of inputs via pipe (>>) while M is the output arity (1 = U1, etc.)
 /// ### Example
 /// ```
-/// let reverb_builder = StereoStaticParamsWrapper::<5>::new(Arc::new(
-///  |args: [f32; 6]| {
+/// let reverb_builder = StaticParamsAudioNodeAdapter::<5>::new(Arc::new(
+///  |args: [f32; 5]| {
 /// /// args[0], args[1] are audio (ignored here, but still passed through - N being the target input count)
 /// reverb_stereo(args[2], args[3], args[4])
 /// }
 /// ));
-/// let reverb_adapter = An(StereoStaticParamsWrapper::new(reverb_builder));
+/// // 5 total inputs with 2 outputs (Stereo)
+/// let reverb_adapter = An(StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder));
 /// /// all inputs are now piped into the wrapper!
 /// ( pass() | pass() | cc_1 | cc_2 |cc_3 ) >> reverb_adapter
 /// ```
 #[derive(Clone)]
-pub struct StereoStaticParamsWrapper<const N: usize> {
-    inner: GenericStereoToN<N>,
+pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
+    inner: GenericNetFunc<N>,
     effect: Net,
     effects_node_id: NodeId,
     params_state: [f32; N],
@@ -38,30 +43,36 @@ pub struct StereoStaticParamsWrapper<const N: usize> {
     process_calls_threshold: usize,
 }
 
-impl<const N: usize> StereoStaticParamsWrapper<N> {
-    pub(crate) fn new(inner: GenericStereoToN<N>) -> Self {
-        let mut s = StereoStaticParamsWrapper {
+impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
+    pub(crate) fn new(inner: GenericNetFunc<N>) -> Self {
+        let mut s = StaticParamsAudioNodeAdapter {
             inner,
             params_temp: [0.0; N],
             params_state: [0.0; N],
-            effect: Net::new(2, 2),
+            effect: Net::new(M, M),
             effects_node_id: NodeId::new(),
             process_cooldown_counter: 0,
             process_calls_threshold: 8000,
         };
+        assert!(
+            N - M <= M,
+            "number of total inputs cannot be the same/lower as the number of outputs!"
+        );
         s.effects_node_id = s.effect.chain(Box::new((s.inner)(s.params_temp)));
         s
     }
 }
-impl<const N: usize> StereoStaticParamsWrapper<N>
+impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
+    Const<M>: ToUInt,
+    U<M>: Size<f32>,
 {
     fn process_cc_events(&mut self, input: &Frame<f32, U<N>>) {
         let mut new_params = [0.0; N];
         // By convention 0, 1 slots will be stereo audio
-        for i in 2..N {
+        for i in M..N {
             new_params[i] = input[i];
         }
 
@@ -89,14 +100,16 @@ where
     }
 }
 
-impl<const N: usize> AudioNode for StereoStaticParamsWrapper<N>
+impl<const N: usize, const M: usize> AudioNode for StaticParamsAudioNodeAdapter<N, M>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
+    Const<M>: ToUInt,
+    U<M>: Size<f32>,
 {
-    const ID: u64 = 60000;
+    const ID: u64 = 60000 + N as u64 + M as u64;
     type Inputs = U<N>;
-    type Outputs = U2;
+    type Outputs = U<M>;
 
     fn reset(&mut self) {
         self.effect.reset();
@@ -107,7 +120,7 @@ where
     }
 
     fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, Self::Outputs> {
-        let mut output = arr![0.0f32; U2];
+        let mut output = GenericArray::generate(|_| 0.0f32);
         self.process_cc_events(input);
         // By convention 0, 1 slots will be stereo audio
         self.effect.tick(&input[0..2], &mut output);
