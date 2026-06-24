@@ -1,13 +1,12 @@
 [[program]]
-function = "super_osc"
-name = "super tri"
+function = "karplus_strong_comb"
+name = "KS Guitar"
 [program.effects]
-chain = ["reverb"]
+chain = ["eq2", "tape_drift", "reverb"]
 [program.effects.configs.reverb.values]
-# Construction parameters (never modulated)
-room_size = 6.0
-damping   = 0.5
-length    = 2.2
+room_size = 5.0
+damping   = 0.7
+length    = 1.5
 # CC‑mappable parameter: wet_amount
 wet_amount = 0.5
 [program.effects.configs.eq2.values]

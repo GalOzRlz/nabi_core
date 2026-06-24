@@ -53,19 +53,19 @@ static REVERB: EffectDef = EffectDef {
             },
             CcParam {
                 value: ParamType::Float32(4.0),
-                cc_norm_index: 2,
+                cc_norm_index: 0,
                 name: "room_size",
                 description: None,
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.55),
-                cc_norm_index: 3,
+                cc_norm_index: 0,
                 name: "damping",
                 description: None,
             },
             CcParam {
                 value: ParamType::Float32(2.0),
-                cc_norm_index: 4,
+                cc_norm_index: 2,
                 name: "length",
                 description: None,
             },
@@ -137,7 +137,7 @@ static EQ2: EffectDef = EffectDef {
         ])),
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
-                value: ParamType::Float32(15_000.0),
+                value: ParamType::Float32(18_000.0),
                 name: "lp_max_frequency",
                 description: Some("The top frequency the high-cut will go to"),
             },

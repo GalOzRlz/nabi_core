@@ -1,0 +1,14 @@
+[[program]]
+function = "super_osc"
+name = "Super Triangle"
+[program.effects]
+chain = ["eq2", "reverb"]
+[program.effects.configs.reverb.values]
+# Construction parameters (never modulated)
+room_size = 5.0
+damping   = 0.4
+length    = 2.2
+wet_amount = 0.5
+[program.effects.configs.eq2.values]
+lowcut = 0.0
+highcut = 1.0

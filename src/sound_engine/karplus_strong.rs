@@ -9,8 +9,8 @@ use std::borrow::Cow;
 
 pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let damping = params.cc_sound_or_default("damping", state);
-    let attack = params.cc_sound_or_default("excitation_attack", state);
-    let decay = params.cc_sound_or_default("excitation_decay", state);
+    let attack = params.cc_sound_or_default("excitation_attack", state) * 5.0;
+    let decay = params.cc_sound_or_default("excitation_decay", state) * 5.0;
     let polarity_param = params
         .get_non_cc_param("polarity")
         .unwrap()

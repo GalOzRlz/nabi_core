@@ -1,0 +1,20 @@
+[[program]]
+function = "karplus_strong_comb"
+name = "KS PlasticPipe"
+[program.sound.values]
+polarity = "negative"
+excitation = "pink"
+[program.effects]
+chain = ["pitch_shifter", "eq2", "reverb"]
+[program.effects.configs.reverb.mapping]
+wet_amount = 1
+length = 0
+[program.effects.configs.reverb.values]
+room_size = 7.0
+damping   = 0.5
+length    = 2.5
+# CC‑mappable parameter: wet_amount
+wet_amount = 0.6
+[program.effects.configs.eq2.values]
+lowcut = 0.0
+highcut = 1.0
