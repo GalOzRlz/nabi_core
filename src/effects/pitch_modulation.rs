@@ -1,3 +1,5 @@
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
 use crate::common::params::{CcAudioNode, NonCcParam};
 use crate::effects::modulators::{smooth_noise_constructor, smooth_random_lfo};
@@ -5,9 +7,10 @@ use fundsp::audiounit::Unit;
 use fundsp::combinator::An;
 use fundsp::math::smooth3;
 use fundsp::net::Net;
-use fundsp::prelude64::{U1, dc, delay, feedback, lfo, pass, tap, tap_linear};
+use fundsp::prelude64::{U1, chorus, dc, delay, feedback, lfo, pass, tap, tap_linear};
 use std::f32::consts::LN_2;
 use std::f64::consts::PI;
+use std::sync::Arc;
 
 /// Pitch shifter inspired by Bitwigs's pitch shifter
 pub fn pitch_shifter(pitch_st: &NonCcParam, freq_hz: &NonCcParam) -> An<Unit<U1, U1>> {
@@ -64,4 +67,21 @@ pub fn tape_wow(depth: CcAudioNode) -> Net {
             center + wow_ms_range + flutter_ms_range,
         );
     wet_amount.clone() | wet_amount
+}
+
+pub fn cc_controlled_chorus(seed: u64) -> An<StaticParamsAudioNodeAdapter<4, 1>> {
+    An(StaticParamsAudioNodeAdapter::<4, 1>::new(Arc::new(
+        move |args: [f32; 4]| to_net(chorus(seed, args[1], args[2], args[3])),
+    )))
+}
+
+/// Stereo chorus inspired by the Juno-60, with cc controlled modulation frequency
+pub fn j_chorus(depth: CcAudioNode, mod_frequency: CcAudioNode) -> Net {
+    let left_chorus = cc_controlled_chorus(1);
+    let right_chorus = cc_controlled_chorus(2);
+
+    let left_input =
+        to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency.clone()) >> left_chorus);
+    let right_input = to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency) >> right_chorus);
+    left_input | right_input
 }
