@@ -2,7 +2,7 @@ use crate::SharedMidiState;
 use crate::common::fm::FmConnector;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::quantize_01_decimal;
-use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
+use crate::common::params::{CcParam, NonCcParam, ParamNode, ParamType, Parameterized};
 use crate::sound_engine::common::detune_map_semitone;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
@@ -23,10 +23,10 @@ use std::borrow::Cow;
 /// A and B oscillators for each core-Oscillator,
 /// ADSR envelope for each synth voice (global).
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
-    let osc1_a = params.get_osc_node_type("osc1_a").unwrap().get_osc_node();
-    let osc1_b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
-    let osc2_a = params.get_osc_node_type("osc2_a").unwrap().get_osc_node();
-    let osc2_b = params.get_osc_node_type("osc2_b").unwrap().get_osc_node();
+    let osc1_a = params.get_node_type("osc1_a").unwrap().get_node();
+    let osc1_b = params.get_node_type("osc1_b").unwrap().get_node();
+    let osc2_a = params.get_node_type("osc2_a").unwrap().get_node();
+    let osc2_b = params.get_node_type("osc2_b").unwrap().get_node();
 
     let detune1 = params.cc_sound_or_default("detune1", state) >> detune_map_semitone();
     let detune2 = params.cc_sound_or_default("detune2", state) >> detune_map_semitone();

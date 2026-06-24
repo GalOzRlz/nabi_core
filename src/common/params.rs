@@ -9,6 +9,7 @@ use fundsp::prelude64::{
     An, AudioUnit, Net, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, join, pass,
     poly_saw, poly_square, pulse, sine, triangle,
 };
+use fundsp::prelude64::{brown, pink, white};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,11 +41,16 @@ pub enum ParamType {
     Float32(f32),
     ADSR([f32; 4]),
     Noise(Cow<'static, str>),
+    String(Cow<'static, str>),
 }
 
 fn cc_to_param(param_type: &ParamType, v: f32) -> ParamType {
     match param_type {
-        &ParamType::U8(_) | ParamType::ADSR(_) | ParamType::Noise(_) | ParamType::Oscillator(_) => {
+        &ParamType::U8(_)
+        | ParamType::ADSR(_)
+        | ParamType::Noise(_)
+        | ParamType::Oscillator(_)
+        | ParamType::String(_) => {
             panic!("Parameter has no possible cc value!")
         }
         &ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
@@ -56,7 +62,9 @@ impl ParamType {
     pub fn to_toml_value(&self) -> Value {
         match self {
             ParamType::U8(a) => Value::Integer(*a as i64),
-            ParamType::Oscillator(a) | ParamType::Noise(a) => Value::String(a.to_string()),
+            ParamType::Oscillator(a) | ParamType::Noise(a) | ParamType::String(a) => {
+                Value::String(a.to_string())
+            }
             ParamType::ZeroOneFloat(a) | ParamType::Float32(a) => Value::Float(*a as f64),
             ParamType::ADSR(array) => Value::Array(
                 array
@@ -83,6 +91,7 @@ impl ParamType {
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
             ParamType::Float32(v) => Ok((*v / 100.0).clamp(0.0, 1.0)), // scale to 0.0-1.0
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
+            ParamType::String(_) => Err(anyhow!("ParamType::String has no numeric value!")),
         }
     }
 
@@ -94,13 +103,27 @@ impl ParamType {
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
             ParamType::Float32(v) => Ok(*v),
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
+            ParamType::String(_) => Err(anyhow!("ParamType::String has no numeric value!")),
         }
     }
-
     pub fn as_oscillator_type(&self) -> Result<OscillatorType, &'static str> {
         match self {
             ParamType::Oscillator(s) => OscillatorType::from_str(s),
             _ => Err("parameter is not a string, cannot convert to oscillator type"),
+        }
+    }
+
+    pub fn as_noise_type(&self) -> Result<NoiseType, &'static str> {
+        match self {
+            ParamType::Oscillator(s) => NoiseType::from_str(s),
+            _ => Err("parameter is not a string, cannot convert to noise type"),
+        }
+    }
+
+    pub fn as_string(&self) -> Result<&str, &'static str> {
+        match self {
+            ParamType::Oscillator(s) | ParamType::String(s) | ParamType::Noise(s) => Ok(s),
+            _ => Err("parameter is not a string, cannot convert to string"),
         }
     }
 }
@@ -113,7 +136,7 @@ impl std::fmt::Display for ParamType {
             ParamType::ZeroOneFloat(v) => write!(f, "{}", v),
             ParamType::Float32(v) => write!(f, "{}", v),
             ParamType::ADSR(v) => write!(f, "{:?}", v),
-            ParamType::Noise(v) => write!(f, "{:?}", v),
+            ParamType::Noise(v) | ParamType::String(v) => write!(f, "{:?}", v),
         }
     }
 }
@@ -192,7 +215,7 @@ impl Parameterized {
 
     /// Returns an ADSR envelope in a `Box` based on internal parameters.
     pub fn boxed_adsr(&self, adsr_param_name: &str, state: &SharedMidiState) -> Box<dyn AudioUnit> {
-        let control = state.control_var();
+        let control = state.gate_var();
         if let Ok(param) = self.get_non_cc_param(adsr_param_name) {
             Box::new(
                 // todo: make into a generic struct that returns boxed audiounit
@@ -265,7 +288,7 @@ impl Parameterized {
         }
         Err(anyhow!(format!("Non-CC-Parameter {} not found", name)))
     }
-    pub fn get_osc_node_type(&self, name: &str) -> anyhow::Result<OscillatorType> {
+    pub fn get_node_type(&self, name: &str) -> anyhow::Result<OscillatorType> {
         let param = self
             .get_non_cc_param(name)
             .map_err(|_| anyhow::anyhow!("parameter not found"))?;
@@ -276,7 +299,10 @@ impl Parameterized {
     }
 
     pub fn get_noise_node_type(&self, name: &str) -> anyhow::Result<NoiseType> {
-        todo!()
+        let param = self
+            .get_non_cc_param(name)
+            .map_err(|_| anyhow::anyhow!("parameter not found"))?;
+        param.value.as_noise_type().map_err(|e| anyhow::anyhow!(e))
     }
 }
 
@@ -325,7 +351,7 @@ where
                         *v = num as u8;
                     }
                 }
-                ParamType::Oscillator(s) | ParamType::Noise(s) => {
+                ParamType::Oscillator(s) | ParamType::Noise(s) | ParamType::String(s) => {
                     if let Some(str_val) = toml_value.as_str() {
                         *s = osc_string_to_cow(str_val);
                     }
@@ -350,20 +376,6 @@ pub fn apply_toml_mapping(params: &mut Parameterized, toml_mapping: &HashMap<Str
             if let Some(val) = toml_mapping.get(param.name).and_then(|v| v.as_integer()) {
                 param.cc_norm_index = val as usize
             }
-        }
-    }
-}
-
-pub enum Polarity {
-    Positive,
-    Negative,
-}
-
-impl Polarity {
-    pub(crate) fn to_float(&self) -> f32 {
-        match self {
-            Polarity::Positive => 1.0,
-            Polarity::Negative => -1.0,
         }
     }
 }
@@ -415,8 +427,8 @@ fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
     }
 }
 
-impl OscillatorType {
-    pub fn get_osc_node(&self) -> An<Unit<U1, U1>> {
+impl ParamNode for OscillatorType {
+    fn get_node(&self) -> An<Unit<U1, U1>> {
         match self {
             OscillatorType::Saw => to_mono_unit(Box::new(poly_saw())),
             OscillatorType::Triangle => to_mono_unit(Box::new(triangle())),
@@ -427,7 +439,9 @@ impl OscillatorType {
             OscillatorType::WaveTable(s) => to_mono_unit(Self::wavetable_synth_from_path(s)),
         }
     }
+}
 
+impl OscillatorType {
     fn wavetable_synth_from_path(path: &PathBuf) -> Box<An<WaveSynth<U1>>> {
         let mut wav_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         wav_path.push(path);
@@ -437,19 +451,15 @@ impl OscillatorType {
         Box::new(An(synth))
     }
 
-    pub fn get_osc_node_pw(&self) -> An<Unit<U2, U1>> {
+    pub fn get_node_pw(&self) -> An<Unit<U2, U1>> {
         // nullify the second value for osc that don't support pulse width
         let pw_sinker = (pass() | pass() * 0.0) >> join::<U2>();
         match self {
-            OscillatorType::Saw => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node())),
-            OscillatorType::Triangle => {
-                stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node()))
-            }
-            OscillatorType::Sine => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node())),
+            OscillatorType::Saw => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
+            OscillatorType::Triangle => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
+            OscillatorType::Sine => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
             OscillatorType::Pulse => stereo_to_mono_unit(Box::new(pulse())),
-            OscillatorType::Square => {
-                stereo_to_mono_unit(Box::new(pw_sinker >> self.get_osc_node()))
-            }
+            OscillatorType::Square => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
             OscillatorType::None => stereo_to_mono_unit(Box::new(pw_sinker >> sine() * 0.0)),
             OscillatorType::WaveTable(s) => {
                 stereo_to_mono_unit(Box::new(pw_sinker >> *Self::wavetable_synth_from_path(&s)))
@@ -457,7 +467,19 @@ impl OscillatorType {
         }
     }
 }
+pub trait ParamNode {
+    fn get_node(&self) -> An<Unit<U1, U1>>;
+}
 
+impl ParamNode for NoiseType {
+    fn get_node(&self) -> An<Unit<U1, U1>> {
+        match self {
+            NoiseType::White => to_mono_unit(Box::new(white())),
+            NoiseType::Brown => to_mono_unit(Box::new(brown())),
+            NoiseType::Pink => to_mono_unit(Box::new(pink())),
+        }
+    }
+}
 impl FromStr for NoiseType {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<NoiseType, &'static str> {
@@ -466,6 +488,7 @@ impl FromStr for NoiseType {
             "white" => Ok(NoiseType::White),
             "brown" => Ok(NoiseType::Brown),
             "pink" => Ok(NoiseType::Pink),
+            "noise" => Ok(NoiseType::White),
             _ => Err("Unrecognized noise type"),
         }
     }

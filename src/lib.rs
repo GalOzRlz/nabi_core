@@ -70,7 +70,7 @@ fn shared_array_to_f32_array(cc_vals: &SharedArray) -> CcArray {
 pub struct SharedMidiState {
     pitch: Shared,
     velocity: Shared,
-    control: Shared,
+    gate: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
     sound_cc_vals: SharedArray,
@@ -84,7 +84,7 @@ impl Default for SharedMidiState {
         Self {
             pitch: Default::default(),
             velocity: Default::default(),
-            control: shared(CONTROL_OFF),
+            gate: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             sound_cc_vals: core::array::from_fn(|_| Shared::new(0.0)),
@@ -100,7 +100,7 @@ impl Debug for SharedMidiState {
         f.debug_struct("SharedMidiState")
             .field("pitch", &self.pitch.value())
             .field("velocity", &self.velocity.value())
-            .field("control", &self.control.value())
+            .field("control", &self.gate.value())
             .field("pitch_bend", &self.pitch_bend.value())
             .finish()
     }
@@ -166,8 +166,8 @@ impl SharedMidiState {
     }
 
     /// Returns `CONTROL_ON` if `Note On` is the most recent event for this pitch, and `CONTROL_OFF` otherwise.
-    pub fn control_var(&self) -> An<Var> {
-        var(&self.control)
+    pub fn gate_var(&self) -> An<Var> {
+        var(&self.gate)
     }
 
     /// Returns the current volume.
@@ -216,12 +216,12 @@ impl SharedMidiState {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));
         self.velocity
             .set_value(velocity as f32 / MAX_MIDI_VALUE as f32);
-        self.control.set_value(CONTROL_ON);
+        self.gate.set_value(CONTROL_ON);
     }
 
     /// Encodes a MIDI `Note Off` event.
     pub fn note_off(&self) {
-        self.control.set_value(CONTROL_OFF);
+        self.gate.set_value(CONTROL_OFF);
     }
 
     /// Encodes a MIDI `Pitch Bend` event.
