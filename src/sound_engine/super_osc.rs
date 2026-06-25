@@ -19,8 +19,8 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         .value
         .as_f32()
         .unwrap();
-    let pulse_width = params.cc_sound_or_default("pulse_width", state);
-    let spread_hz = params.cc_sound_or_default("detune_spread", state) * max_spread_hz;
+    let pulse_width = params.sound_cc_or_default("pulse_width", state);
+    let spread_hz = params.sound_cc_or_default("detune_spread", state) * max_spread_hz;
     let osc = params.get_node_type("osc").unwrap().get_node_pw();
 
     let voice_count = {

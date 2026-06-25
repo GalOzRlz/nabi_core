@@ -8,9 +8,9 @@ use linkme::distributed_slice;
 use std::borrow::Cow;
 
 pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
-    let damping = params.cc_sound_or_default("damping", state);
-    let attack = params.cc_sound_or_default("excitation_attack", state) * 5.0;
-    let decay = params.cc_sound_or_default("excitation_decay", state) * 5.0;
+    let damping = params.sound_cc_or_default("damping", state);
+    let attack = params.sound_cc_or_default("attack", state) * 2.5 + 0.002;
+    let decay = params.sound_cc_or_default("decay", state) * 1.0 + 0.005;
     let polarity_param = params
         .get_non_cc_param("polarity")
         .unwrap()
@@ -47,7 +47,7 @@ static KS_COMB: SoundFactory = SoundFactory {
             CcParam {
                 value: ParamType::ZeroOneFloat(0.01),
                 cc_norm_index: 2,
-                name: "excitation_attack",
+                name: "attack",
                 description: Some(
                     "attack rate for the initial noise excitation - longer attacks create a breathier attack",
                 ),
@@ -55,7 +55,7 @@ static KS_COMB: SoundFactory = SoundFactory {
             CcParam {
                 value: ParamType::ZeroOneFloat(0.01),
                 cc_norm_index: 3,
-                name: "excitation_decay",
+                name: "decay",
                 description: Some(
                     "decay rate for the initial noise excitation - the longer it gets the more ",
                 ),

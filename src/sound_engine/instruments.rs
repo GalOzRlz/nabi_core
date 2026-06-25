@@ -81,7 +81,7 @@ impl CombPluck {
             max_delay_samples,
             max_delay_samples_f32,
             minimum_damping_frequency,
-            maximum_damping_frequency: 20_000.0,
+            maximum_damping_frequency: 8_000.0,
             inv_max_delay: 1.0 / max_delay_samples_f32,
             feedback: feedback.clamp(0.0, 1.0) * polarity.to_float(),
             excitation_gain: excitation_gain.clamp(0.0, 1.0),
@@ -111,16 +111,13 @@ impl CombPluck {
             + self.minimum_damping_frequency * self.damping;
         self.g = (-std::f32::consts::TAU * self.damping_freq / self.sample_rate).exp();
     }
-    /// Set the smoothing coefficient for frequency changes.
-    pub fn set_smoothing(&mut self, smoothing: f32) {
-        self.smoothing = smoothing.clamp(0.0, 1.0);
-    }
 
     /// fill delay line with secondary noise.
     pub fn init_delay_line(&mut self) {
         if self.buffer.is_empty() {
             self.buffer.resize(self.max_delay_samples, 0.0);
         }
+        self.buffer.fill(0.0);
         self.write_pos = 0;
         self.read_pos_f = 0.0;
     }
@@ -185,7 +182,7 @@ impl CombPluck {
         if self.read_pos_f >= self.max_delay_samples as f32 {
             self.read_pos_f -= self.max_delay_samples as f32;
         }
-        [output as f32].into()
+        [output].into()
     }
 }
 
@@ -244,17 +241,17 @@ fn pluck_generic(
     damping: f32,
     polarity: Polarity,
 ) -> An<CombPluck> {
-    let max_delay_seconds = max_delay_seconds.clamp(0.0, 1.3);
+    let max_delay_seconds = max_delay_seconds.clamp(0.0, 2.0);
     An(CombPluck::new(
         feedback,
         max_delay_seconds,
         excitation_gain,
         damping,
-        200.0,
+        40.0,
         polarity,
     ))
 }
 
 pub fn pluck_comb_string(polarity: Polarity) -> An<CombPluck> {
-    pluck_generic(0.995, 0.1, 1.0, 0.0, polarity)
+    pluck_generic(0.990, 1.3, 1.0, 0.01, polarity)
 }

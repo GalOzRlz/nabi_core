@@ -76,7 +76,7 @@ pub fn cc_controlled_chorus(seed: u64) -> An<StaticParamsAudioNodeAdapter<4, 1>>
 }
 
 /// Stereo chorus inspired by the Juno-60, with cc controlled modulation frequency
-pub fn j_chorus(depth: CcAudioNode, mod_frequency: CcAudioNode) -> Net {
+pub fn stereo_j_chorus(depth: CcAudioNode, mod_frequency: CcAudioNode) -> Net {
     let left_chorus = cc_controlled_chorus(1);
     let right_chorus = cc_controlled_chorus(2);
 

@@ -143,16 +143,30 @@ impl SharedMidiState {
         Some(var(&self.fx_cc_vals[norm_idx - 1]))
     }
 
-    pub fn get_fx_an_or_default(&self, cc: &CcParam) -> CcAudioNode {
+    pub fn fx_cc_or_default(&self, cc: &CcParam) -> CcAudioNode {
         self.fx_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
             >> cc_smooth()
     }
 
     /// Pulls values if they have a mapping - otherwise provides a normalized version of the values provided as defaults (from toml they exist, otherwise from coded defaults) as 0.0-1.0 float.
-    pub fn get_sound_an_or_default(&self, cc: &CcParam) -> CcAudioNode {
+    pub fn sound_cc_or_default(&self, cc: &CcParam) -> CcAudioNode {
         self.sound_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
+            >> cc_smooth()
+    }
+
+    /// Pulls FX CC value or a version of the default value mapped to a closure
+    pub fn fx_cc_or(&self, cc: &CcParam, failback: f32) -> CcAudioNode {
+        self.fx_cc(cc.cc_norm_index)
+            .unwrap_or(var(&shared(failback)))
+            >> cc_smooth()
+    }
+
+    /// Pulls Sound CC or a version of the default value mapped to a closure
+    pub fn sound_cc_or(&self, cc: &CcParam, failback: f32) -> CcAudioNode {
+        self.sound_cc(cc.cc_norm_index)
+            .unwrap_or(var(&shared(failback)))
             >> cc_smooth()
     }
 

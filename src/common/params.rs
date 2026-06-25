@@ -1,12 +1,15 @@
 use crate::SharedMidiState;
 use crate::common::fundsp::to_net;
-use crate::common::helpers::{quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit};
+use crate::common::helpers::{
+    quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
+};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
 use anyhow::anyhow;
 use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
+use fundsp::numeric_array::ArrayLength;
 use fundsp::prelude64::{
-    An, AudioUnit, Net, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, join, pass,
+    An, AudioUnit, Net, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, join, pass,
     poly_saw, poly_square, pulse, sine, triangle,
 };
 use fundsp::prelude64::{brown, pink, white};
@@ -183,7 +186,6 @@ impl CcInit for Parameterized {
                 }
             }
         }
-        //        println!("name: {} with index: {:?}", self.name, cc_array);
         cc_array
     }
 }
@@ -241,7 +243,10 @@ impl Parameterized {
                 }
             }
         }
-        Err(anyhow!(format!("CC-Parameter {} not found", name)))
+        Err(anyhow!(format!(
+            "CC Parameter {} value not found for {}",
+            name, self.name
+        )))
     }
 
     pub fn to_toml_values(&self) -> HashMap<String, Value> {
@@ -270,12 +275,28 @@ impl Parameterized {
         }
     }
 
-    pub fn cc_sound_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {
-        shared.get_sound_an_or_default(&self.get_cc_param(name).unwrap())
+    pub fn sound_cc_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {
+        shared.sound_cc_or_default(&self.get_cc_param(name).unwrap())
     }
 
-    pub fn cc_fx_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {
-        shared.get_fx_an_or_default(&self.get_cc_param(name).unwrap())
+    pub fn fx_cc_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {
+        shared.fx_cc_or_default(&self.get_cc_param(name).unwrap())
+    }
+
+    pub fn fx_cc_or_map<F>(&self, name: &str, shared: &SharedMidiState, func: F) -> CcAudioNode
+    where
+        F: FnOnce(&CcParam) -> f32,
+    {
+        let post_fn = func(&self.get_cc_param(name).unwrap());
+        shared.fx_cc_or(&self.get_cc_param(name).unwrap(), post_fn)
+    }
+
+    pub fn sound_cc_or_map<F>(&self, name: &str, shared: &SharedMidiState, func: F) -> CcAudioNode
+    where
+        F: FnOnce(&CcParam) -> f32,
+    {
+        let post_fn = func(&self.get_cc_param(name).unwrap());
+        shared.sound_cc_or(&self.get_cc_param(name).unwrap(), post_fn)
     }
 
     pub fn get_non_cc_param(&self, name: &str) -> anyhow::Result<&NonCcParam> {
@@ -427,7 +448,7 @@ fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
     }
 }
 
-impl ParamNode for OscillatorType {
+impl ParamNode<U1, U1> for OscillatorType {
     fn get_node(&self) -> An<Unit<U1, U1>> {
         match self {
             OscillatorType::Saw => to_mono_unit(Box::new(poly_saw())),
@@ -467,16 +488,20 @@ impl OscillatorType {
         }
     }
 }
-pub trait ParamNode {
-    fn get_node(&self) -> An<Unit<U1, U1>>;
+pub trait ParamNode<N, M>
+where
+    N: ArrayLength + Send + Sync,
+    M: ArrayLength + Send + Sync,
+{
+    fn get_node(&self) -> An<Unit<N, M>>;
 }
 
-impl ParamNode for NoiseType {
-    fn get_node(&self) -> An<Unit<U1, U1>> {
+impl ParamNode<U0, U1> for NoiseType {
+    fn get_node(&self) -> An<Unit<U0, U1>> {
         match self {
-            NoiseType::White => to_mono_unit(Box::new(white())),
-            NoiseType::Brown => to_mono_unit(Box::new(brown())),
-            NoiseType::Pink => to_mono_unit(Box::new(pink())),
+            NoiseType::White => to_zero_mono_unit(Box::new(white())),
+            NoiseType::Brown => to_zero_mono_unit(Box::new(brown())),
+            NoiseType::Pink => to_zero_mono_unit(Box::new(pink())),
         }
     }
 }
