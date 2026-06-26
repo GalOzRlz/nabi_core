@@ -22,10 +22,11 @@ fn cc_controlled_reverb(
     damping: CcAudioNode,
 ) -> Net {
     let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
-    let reverb_adapter = An(StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder));
+    let mut reverb_adapter = StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder);
+    reverb_adapter.set_fadeout_time(0.5);
     let reverb =
     // assumes room size and reverb times are 0-10
-        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> reverb_adapter * 1.3;
+        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> An(reverb_adapter) * 1.3;
     cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
 

@@ -13,10 +13,7 @@ use std::borrow::Cow;
 use std::ops::Add;
 
 pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
-    let a = params.sound_cc_or_default("attack", state);
-    let d = params.sound_cc_or_default("decay", state);
-    let s = params.sound_cc_or_default("sustain", state);
-    let r = params.sound_cc_or_default("release", state);
+    let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
     let cc_adsr = assemble_cc_adsr(a, d, s, r);
 
     let max_spread_hz = params

@@ -1,4 +1,5 @@
 use crate::SharedMidiState;
+use crate::common::envelopes::assemble_cc_adsr;
 use crate::common::fm::FmConnector;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::quantize_01_decimal;
@@ -23,6 +24,9 @@ use std::borrow::Cow;
 /// A and B oscillators for each core-Oscillator,
 /// ADSR envelope for each synth voice (global).
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
+    let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
+    let cc_adsr = assemble_cc_adsr(a, d, s, r);
+
     let osc1_a = params.get_node_type("osc1_a").unwrap().get_node();
     let osc1_b = params.get_node_type("osc1_b").unwrap().get_node();
     let osc2_a = params.get_node_type("osc2_a").unwrap().get_node();
@@ -140,13 +144,6 @@ static MORPH2: SoundFactory = SoundFactory {
                 name: "osc2_b",
                 description: None,
             },
-            NonCcParam {
-                value: ParamType::ADSR([0.3, 0.1, 0.75, 0.35]),
-                name: "adsr",
-                description: None,
-            },
         ])),
     },
 };
-
-//todo: add a general synth: pro6 style...2 oscillators with shapes cascading (saw, triangle, pulse) - detune control,
