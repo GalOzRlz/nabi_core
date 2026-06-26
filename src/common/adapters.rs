@@ -21,7 +21,7 @@ type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>
 /// N signifies the total number of inputs via pipe (>>) while M is the output arity (1 = U1, etc.)
 /// ### Example
 /// ```
-/// let reverb_builder = StaticParamsAudioNodeAdapter::<5>::new(Arc::new(
+/// let reverb_builder = StaticParamsAudioNodeAdapter::<5, 2>::new(Arc::new(
 ///  |args: [f32; 5]| {
 /// /// args[0], args[1] are audio (ignored here, but still passed through - N being the target input count)
 /// reverb_stereo(args[2], args[3], args[4])

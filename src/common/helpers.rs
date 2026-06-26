@@ -1,6 +1,6 @@
 use fundsp::audiounit::{AudioUnit, Unit};
 use fundsp::prelude32::{ShapeFn, Shaper};
-use fundsp::prelude64::{An, U1, U2, shape_fn, unit};
+use fundsp::prelude64::{An, U0, U1, U2, shape_fn, unit};
 
 pub fn quantize_u8_to_01(value: u8) -> f32 {
     let norm = value as f32 / 127.0;
@@ -14,6 +14,10 @@ pub fn quantize_01_decimal() -> An<Shaper<ShapeFn<fn(f32) -> f32>>> {
 
 pub fn to_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U1, U1>> {
     unit::<U1, U1>(audiounit)
+}
+
+pub fn to_zero_mono_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U0, U1>> {
+    unit::<U0, U1>(audiounit)
 }
 
 pub fn to_stereo_unit(audiounit: Box<dyn AudioUnit>) -> An<Unit<U2, U2>> {

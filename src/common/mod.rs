@@ -1,5 +1,6 @@
 pub(crate) mod adapters;
 pub mod cc;
+pub(crate) mod envelopes;
 pub(crate) mod fm;
 pub mod fundsp;
 pub(crate) mod helpers;

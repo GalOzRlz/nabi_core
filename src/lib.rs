@@ -70,7 +70,7 @@ fn shared_array_to_f32_array(cc_vals: &SharedArray) -> CcArray {
 pub struct SharedMidiState {
     pitch: Shared,
     velocity: Shared,
-    control: Shared,
+    gate: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
     sound_cc_vals: SharedArray,
@@ -84,7 +84,7 @@ impl Default for SharedMidiState {
         Self {
             pitch: Default::default(),
             velocity: Default::default(),
-            control: shared(CONTROL_OFF),
+            gate: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             sound_cc_vals: core::array::from_fn(|_| Shared::new(0.0)),
@@ -100,7 +100,7 @@ impl Debug for SharedMidiState {
         f.debug_struct("SharedMidiState")
             .field("pitch", &self.pitch.value())
             .field("velocity", &self.velocity.value())
-            .field("control", &self.control.value())
+            .field("control", &self.gate.value())
             .field("pitch_bend", &self.pitch_bend.value())
             .finish()
     }
@@ -143,15 +143,30 @@ impl SharedMidiState {
         Some(var(&self.fx_cc_vals[norm_idx - 1]))
     }
 
-    pub fn get_fx_an_or_default(&self, cc: &CcParam) -> CcAudioNode {
+    pub fn fx_cc_or_default(&self, cc: &CcParam) -> CcAudioNode {
         self.fx_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
             >> cc_smooth()
     }
 
-    pub fn get_sound_an_or_default(&self, cc: &CcParam) -> CcAudioNode {
+    /// Pulls values if they have a mapping - otherwise provides a normalized version of the values provided as defaults (from toml they exist, otherwise from coded defaults) as 0.0-1.0 float.
+    pub fn sound_cc_or_default(&self, cc: &CcParam) -> CcAudioNode {
         self.sound_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
+            >> cc_smooth()
+    }
+
+    /// Pulls FX CC value or a version of the default value mapped to a closure
+    pub fn fx_cc_or(&self, cc: &CcParam, failback: f32) -> CcAudioNode {
+        self.fx_cc(cc.cc_norm_index)
+            .unwrap_or(var(&shared(failback)))
+            >> cc_smooth()
+    }
+
+    /// Pulls Sound CC or a version of the default value mapped to a closure
+    pub fn sound_cc_or(&self, cc: &CcParam, failback: f32) -> CcAudioNode {
+        self.sound_cc(cc.cc_norm_index)
+            .unwrap_or(var(&shared(failback)))
             >> cc_smooth()
     }
 
@@ -166,8 +181,8 @@ impl SharedMidiState {
     }
 
     /// Returns `CONTROL_ON` if `Note On` is the most recent event for this pitch, and `CONTROL_OFF` otherwise.
-    pub fn control_var(&self) -> An<Var> {
-        var(&self.control)
+    pub fn gate_var(&self) -> An<Var> {
+        var(&self.gate)
     }
 
     /// Returns the current volume.
@@ -216,12 +231,12 @@ impl SharedMidiState {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));
         self.velocity
             .set_value(velocity as f32 / MAX_MIDI_VALUE as f32);
-        self.control.set_value(CONTROL_ON);
+        self.gate.set_value(CONTROL_ON);
     }
 
     /// Encodes a MIDI `Note Off` event.
     pub fn note_off(&self) {
-        self.control.set_value(CONTROL_OFF);
+        self.gate.set_value(CONTROL_OFF);
     }
 
     /// Encodes a MIDI `Pitch Bend` event.

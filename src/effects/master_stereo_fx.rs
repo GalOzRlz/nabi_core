@@ -11,8 +11,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 pub fn master_limiter() -> Net {
-    let block = dcblock() >> limiter(0.002, 0.3);
-    let master = multipass::<U2>() >> (block.clone() | block);
+    let master = multipass::<U2>() >> limiter_stereo(0.012, 0.3);
     to_net(master)
 }
 
@@ -25,16 +24,20 @@ fn cc_controlled_reverb(
     let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
     let reverb_adapter = An(StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder));
     let reverb =
-        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> reverb_adapter;
+    // todo: think how to avoid scenarios where you set a value but also set CC mapping?
+        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> reverb_adapter * 1.3;
     cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
 
 fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
-        let room_size_param = params.cc_fx_or_default("room_size", state);
-        let damping_param = params.cc_fx_or_default("damping", state);
-        let length_param = params.cc_fx_or_default("length", state);
-        let wet_amount = params.cc_fx_or_default("wet_amount", state);
+        let damping_param = params.fx_cc_or_default("damping", state);
+        let wet_amount = params.fx_cc_or_default("%", state);
+
+        let room_size_param =
+            params.fx_cc_or_map("room_size", state, |x| x.value.as_f32().unwrap() / 10.0);
+        let length_param =
+            params.fx_cc_or_map("length", state, |x| x.value.as_f32().unwrap() / 10.0);
         cc_controlled_reverb(wet_amount, length_param, room_size_param, damping_param)
     })
 }
@@ -48,24 +51,24 @@ static REVERB: EffectDef = EffectDef {
             CcParam {
                 value: ParamType::ZeroOneFloat(0.35),
                 cc_norm_index: 1,
-                name: "wet_amount",
+                name: "%",
                 description: None,
             },
             CcParam {
                 value: ParamType::Float32(4.0),
-                cc_norm_index: 2,
+                cc_norm_index: 0,
                 name: "room_size",
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.55),
-                cc_norm_index: 3,
+                value: ParamType::ZeroOneFloat(0.8),
+                cc_norm_index: 0,
                 name: "damping",
                 description: None,
             },
             CcParam {
                 value: ParamType::Float32(2.0),
-                cc_norm_index: 4,
+                cc_norm_index: 0,
                 name: "length",
                 description: None,
             },
@@ -76,10 +79,10 @@ static REVERB: EffectDef = EffectDef {
 
 fn eq2(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
-        let lowpass_cutoff = params.cc_fx_or_default("lowpass_cutoff", state);
-        let lowpass_q = params.cc_fx_or_default("lowpass_q", state);
-        let highpass_cutoff = params.cc_fx_or_default("highpass_cutoff", state);
-        let highpass_q = params.cc_fx_or_default("highpass_q", state);
+        let lowpass_cutoff = params.fx_cc_or_default("highcut_freq", state);
+        let lowpass_q = params.fx_cc_or_default("lowpass_q", state);
+        let highpass_cutoff = params.fx_cc_or_default("lowcut_freq", state);
+        let highpass_q = params.fx_cc_or_default("highpass_q", state);
 
         let lp_max_frequency = params
             .get_non_cc_param("lp_max_frequency")
@@ -111,33 +114,33 @@ static EQ2: EffectDef = EffectDef {
         name: "eq2",
         cc_params: Some(Cow::Borrowed(&[
             CcParam {
-                value: ParamType::ZeroOneFloat(1.0),
-                cc_norm_index: 4,
-                name: "lowpass_cutoff",
+                value: ParamType::ZeroOneFloat(0.0),
+                cc_norm_index: 3,
+                name: "lowcut_freq",
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.6),
+                value: ParamType::ZeroOneFloat(0.05),
                 cc_norm_index: 0,
                 name: "lowpass_q",
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.0),
-                cc_norm_index: 3,
-                name: "highpass_cutoff",
+                value: ParamType::ZeroOneFloat(1.0),
+                cc_norm_index: 4,
+                name: "highcut_freq",
                 description: None,
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.35),
                 cc_norm_index: 0,
-                name: "lowpass_q",
+                name: "highpass_q",
                 description: None,
             },
         ])),
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
-                value: ParamType::Float32(15_000.0),
+                value: ParamType::Float32(18_000.0),
                 name: "lp_max_frequency",
                 description: Some("The top frequency the high-cut will go to"),
             },
@@ -152,7 +155,7 @@ static EQ2: EffectDef = EffectDef {
 
 pub fn tape_drift(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
-        let depth_net = params.cc_fx_or_default("drift_depth", state);
+        let depth_net = params.fx_cc_or_default("depth", state);
         tape_wow(depth_net)
     })
 }
@@ -161,11 +164,11 @@ pub fn tape_drift(params: Arc<Parameterized>) -> EffectFunc {
 static TAPE_DRIFT: EffectDef = EffectDef {
     factory: tape_drift,
     params: Parameterized {
-        name: "tape_drift",
+        name: "drift",
         cc_params: Some(Cow::Borrowed(&[CcParam {
             value: ParamType::ZeroOneFloat(0.35),
             cc_norm_index: 2,
-            name: "wet_amount",
+            name: "depth",
             description: None,
         }])),
         non_cc_params: None,
@@ -176,7 +179,7 @@ pub fn stereo_pitch_shifter(params: Arc<Parameterized>) -> EffectFunc {
     Box::new(move |state| {
         let grain_frequency = params.get_non_cc_param("grain_frequency").unwrap();
         let pitch_semi_tones = params.get_non_cc_param("pitch").unwrap();
-        let amount = params.cc_fx_or_default("amount", state);
+        let amount = params.fx_cc_or_default("%", state);
         cc_controlled_wet_dry_fx(
             amount,
             to_net(pitch_shifter(pitch_semi_tones, grain_frequency)),
@@ -192,7 +195,7 @@ static LOFI_PITCH_SHIFTER: EffectDef = EffectDef {
         cc_params: Some(Cow::Borrowed(&[CcParam {
             value: ParamType::ZeroOneFloat(0.5),
             cc_norm_index: 2,
-            name: "wet_amount",
+            name: "%",
             description: None,
         }])),
         non_cc_params: Some(Cow::Borrowed(&[

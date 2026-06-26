@@ -2,7 +2,7 @@ use crate::SharedMidiState;
 use crate::common::fm::FmConnector;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::quantize_01_decimal;
-use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
+use crate::common::params::{CcParam, NonCcParam, ParamNode, ParamType, Parameterized};
 use crate::sound_engine::common::detune_map_semitone;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
@@ -23,25 +23,25 @@ use std::borrow::Cow;
 /// A and B oscillators for each core-Oscillator,
 /// ADSR envelope for each synth voice (global).
 pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
-    let osc1_a = params.get_osc_node_type("osc1_a").unwrap().get_osc_node();
-    let osc1_b = params.get_osc_node_type("osc1_b").unwrap().get_osc_node();
-    let osc2_a = params.get_osc_node_type("osc2_a").unwrap().get_osc_node();
-    let osc2_b = params.get_osc_node_type("osc2_b").unwrap().get_osc_node();
+    let osc1_a = params.get_node_type("osc1_a").unwrap().get_node();
+    let osc1_b = params.get_node_type("osc1_b").unwrap().get_node();
+    let osc2_a = params.get_node_type("osc2_a").unwrap().get_node();
+    let osc2_b = params.get_node_type("osc2_b").unwrap().get_node();
 
-    let detune1 = params.cc_sound_or_default("detune1", state) >> detune_map_semitone();
-    let detune2 = params.cc_sound_or_default("detune2", state) >> detune_map_semitone();
+    let detune1 = params.sound_cc_or_default("detune1", state) >> detune_map_semitone();
+    let detune2 = params.sound_cc_or_default("detune2", state) >> detune_map_semitone();
 
     let base_pitch1 = state.bent_pitch() * detune1;
     let base_pitch2 = state.bent_pitch() * detune2;
 
     // CC: goes from 0.0 to 100 in whole steps
     let fm_ratio_an =
-        params.cc_sound_or_default("fm_ratio", state) >> quantize_01_decimal() * constant(100.0);
-    let fm_amount_1 = params.cc_sound_or_default("fm_amount_1", state) * constant(13.0);
-    let fm_amount_2 = params.cc_sound_or_default("fm_amount_2", state) * constant(13.0);
+        params.sound_cc_or_default("fm_ratio", state) >> quantize_01_decimal() * constant(100.0);
+    let fm_amount_1 = params.sound_cc_or_default("fm_amount_1", state) * constant(13.0);
+    let fm_amount_2 = params.sound_cc_or_default("fm_amount_2", state) * constant(13.0);
 
-    let balance1_cc = params.cc_sound_or_default("balance_1", state);
-    let balance2_cc = params.cc_sound_or_default("balance_2", state);
+    let balance1_cc = params.sound_cc_or_default("balance_1", state);
+    let balance2_cc = params.sound_cc_or_default("balance_2", state);
 
     // The B oscillators are modulated by the A oscillators
     let osc1_b = FmConnector {
@@ -65,7 +65,7 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let morph2 =
         base_pitch2 >> osc2_a * (constant(1.0) - balance2_cc.clone()) & osc2_b * balance2_cc;
     let synth = Box::new(morph1 + morph2);
-    state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
+    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
 }
 
 #[distributed_slice(SOUNDS)]

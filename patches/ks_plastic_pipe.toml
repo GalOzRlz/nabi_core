@@ -1,0 +1,34 @@
+[[program]]
+function = "karplus_strong_comb"
+name = "KS PlasticPipe"
+
+[program.sound.values]
+excitation = "pink"
+decay = 0.09448818862438202
+polarity = "negative"
+damping = 0.14173229038715363
+attack = 0.0
+
+[program.effects]
+chain = [
+    # saturation?
+    "eq2",
+    "reverb",
+]
+
+[program.effects.configs.reverb.values]
+damping = 0.4000000059604645
+length = 2.732283592224121
+room_size = 7.0
+"%" = 0.4566929042339325
+
+[program.effects.configs.reverb.mapping]
+wet_amount = 1
+
+[program.effects.configs.eq2.values]
+lowpass_q = 0.05000000074505806
+highpass_q = 0.3499999940395355
+lp_max_frequency = 18000.0
+highcut_freq = 0.24409449100494385
+lowcut_freq = 0.007874015718698502
+hp_max_frequency = 8000.0

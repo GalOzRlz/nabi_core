@@ -11,6 +11,7 @@ use linkme::distributed_slice;
 use std::borrow::Cow;
 use std::ops::Add;
 
+/// add live adsr
 pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let max_spread_hz = params
         .get_non_cc_param("max_spread_hz")
@@ -18,9 +19,9 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         .value
         .as_f32()
         .unwrap();
-    let pulse_width = params.cc_sound_or_default("pulse_width", state);
-    let spread_hz = params.cc_sound_or_default("detune_spread", state) * max_spread_hz;
-    let osc = params.get_osc_node_type("osc").unwrap().get_osc_node_pw();
+    let pulse_width = params.sound_cc_or_default("pulse_width", state);
+    let spread_hz = params.sound_cc_or_default("detune_spread", state) * max_spread_hz;
+    let osc = params.get_node_type("osc").unwrap().get_node_pw();
 
     let voice_count = {
         match params.get_non_cc_param("voice_count").unwrap().value {
@@ -41,8 +42,8 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         );
         summing_net = summing_net.add(new_voice);
     }
-    let synth = Box::new(summing_net);
-    state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
+    let synth = Box::new(summing_net * 0.6);
+    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
 }
 
 #[distributed_slice(SOUNDS)]

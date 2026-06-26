@@ -48,14 +48,17 @@ impl CcInit for FxChainFactory {
             //println!("start get definitions {:?}", definitions);
             let mut cc_summation = Vec::with_capacity(definitions.len());
             for def in definitions {
-                cc_summation.push(def.get_initial_cc());
+                let cc_def = def.get_initial_cc();
+                // println!("cc def: {:?} for {}", cc_def, def.name);
+                cc_summation.push(cc_def);
             }
             for param in cc_summation.iter() {
-                for (idx, val) in param.iter().filter(|x| **x != 0.0).enumerate() {
+                for (idx, val) in param.iter().enumerate().filter(|(_, v)| **v != 0.0) {
                     final_cc_array[idx] = *val;
                 }
             }
         }
+        //println!("final_cc_array: {:?}", final_cc_array);
         final_cc_array
     }
 }
