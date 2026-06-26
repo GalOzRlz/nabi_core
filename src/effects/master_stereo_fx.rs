@@ -34,10 +34,8 @@ fn fundsp_reverb_factory(params: Arc<Parameterized>) -> EffectFunc {
         let damping_param = params.fx_cc_or_default("damping", state);
         let wet_amount = params.fx_cc_or_default("%", state);
 
-        let room_size_param =
-            params.fx_cc_or_map("room_size", state, |x| x.value.as_f32().unwrap() / 10.0);
-        let length_param =
-            params.fx_cc_or_map("length", state, |x| x.value.as_f32().unwrap() / 10.0);
+        let room_size_param = params.fx_cc_or_default("room_size", state);
+        let length_param = params.fx_cc_or_default("length", state);
         cc_controlled_reverb(wet_amount, length_param, room_size_param, damping_param)
     })
 }
@@ -55,7 +53,7 @@ static REVERB: EffectDef = EffectDef {
                 description: None,
             },
             CcParam {
-                value: ParamType::Float32(4.0),
+                value: ParamType::ZeroTenFloat(4.0),
                 cc_norm_index: 0,
                 name: "room_size",
                 description: None,
@@ -67,7 +65,7 @@ static REVERB: EffectDef = EffectDef {
                 description: None,
             },
             CcParam {
-                value: ParamType::Float32(2.0),
+                value: ParamType::ZeroTenFloat(2.0),
                 cc_norm_index: 0,
                 name: "length",
                 description: None,

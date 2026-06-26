@@ -8,10 +8,12 @@ decay = 0.09448818862438202
 polarity = "negative"
 damping = 0.14173229038715363
 attack = 0.0
+exciter_lp = 1.0
 
 [program.effects]
 chain = [
     # saturation?
+    # chorus?
     "eq2",
     "reverb",
 ]
