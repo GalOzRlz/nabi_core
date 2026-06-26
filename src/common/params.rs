@@ -20,6 +20,7 @@ use std::sync::Arc;
 use toml::Value;
 
 pub type CcAudioNode = An<Pipe<Var, Follow<f64>>>;
+
 pub type CcArray = [f32; MAX_KNOBS_PER_GROUP];
 
 pub trait CcInit {
@@ -279,7 +280,7 @@ impl Parameterized {
         new_map
     }
 
-    pub fn apply_cc_state(&mut self, cc_array: &CcArray) {
+    pub fn import_cc_state(&mut self, cc_array: &CcArray) {
         if let Some(cow_cc) = self.cc_params.as_mut() {
             let params = cow_cc.to_mut();
             for def in params.iter_mut() {

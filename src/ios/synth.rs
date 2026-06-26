@@ -414,7 +414,7 @@ impl<const N: usize> VoiceManager<N> {
         new_params
             .sound_factory
             .params
-            .apply_cc_state(&sound_cc_array);
+            .import_cc_state(&sound_cc_array);
         let new_sound_values = new_params.sound_factory.params.to_toml_values();
 
         let existing_mapping = old_toml.sound.as_ref().and_then(|s| s.mapping.clone());
@@ -428,7 +428,7 @@ impl<const N: usize> VoiceManager<N> {
             for def in new_params.effects.definitions.iter() {
                 for fx in def.iter() {
                     let mut new_fx = (**fx).clone();
-                    new_fx.apply_cc_state(&fx_cc_array);
+                    new_fx.import_cc_state(&fx_cc_array);
                     let values = new_fx.to_toml_values();
                     let fx_c_map = ConfigurableMappings {
                         values: Some(values),
