@@ -4,13 +4,14 @@ use crate::common::params::{CcParam, NonCcParam, ParamNode, ParamType, Parameter
 use crate::sound_engine::instruments::{Polarity, pluck_comb_string};
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
+use fundsp::prelude64::{dc, lowpass, pass};
 use linkme::distributed_slice;
 use std::borrow::Cow;
 
 pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let damping = params.sound_cc_or_default("damping", state);
-    let attack = params.sound_cc_or_default("attack", state) * 1.0 + 0.005;
-    let decay = params.sound_cc_or_default("decay", state) * 1.0 + 0.005;
+    let attack = params.sound_cc_or_default("attack", state) + 0.005;
+    let decay = params.sound_cc_or_default("decay", state) + 0.005;
     let polarity_param = params
         .get_non_cc_param("polarity")
         .unwrap()
@@ -21,7 +22,11 @@ pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> B
     let polarity = Polarity::from_string(polarity_param);
     let ks = pluck_comb_string(polarity);
 
-    let excitation_noise = params.get_noise_node_type("excitation").unwrap().get_node();
+    let exciter_lp = params.sound_cc_or_default("exciter_lp", state);
+    let exciter_filter = (pass() | exciter_lp * 20_000.0 | dc(0.2)) >> lowpass();
+
+    let excitation_noise =
+        params.get_noise_node_type("excitation").unwrap().get_node() >> exciter_filter;
     let excitation_env = (state.gate_var() | attack | decay) >> cc_controlled_attack_decay();
     let synth = Box::new(
         (state.bent_pitch() | state.gate_var() | excitation_noise * excitation_env | damping)
@@ -46,8 +51,16 @@ static KS_COMB: SoundFactory = SoundFactory {
                 ),
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.01),
+                value: ParamType::ZeroOneFloat(0.45),
                 cc_norm_index: 2,
+                name: "exciter_lp",
+                description: Some(
+                    "the frequency of a lowpass filter on the excitation noise itself",
+                ),
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.01),
+                cc_norm_index: 3,
                 name: "attack",
                 description: Some(
                     "attack rate for the initial noise excitation - longer attacks create a breathier attack",
@@ -55,7 +68,7 @@ static KS_COMB: SoundFactory = SoundFactory {
             },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.01),
-                cc_norm_index: 3,
+                cc_norm_index: 4,
                 name: "decay",
                 description: Some(
                     "decay rate for the initial noise excitation - the longer it gets the more ",
