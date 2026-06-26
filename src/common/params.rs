@@ -1,5 +1,4 @@
 use crate::SharedMidiState;
-use crate::common::fundsp::to_net;
 use crate::common::helpers::{
     quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
 };
@@ -9,8 +8,8 @@ use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
 use fundsp::numeric_array::ArrayLength;
 use fundsp::prelude64::{
-    An, AudioUnit, Net, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, join, pass,
-    poly_saw, poly_square, pulse, sine, triangle,
+    An, AudioUnit, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, hammond, join,
+    lorenz, organ, pass, poly_saw, poly_square, pulse, sine, triangle,
 };
 use fundsp::prelude64::{brown, pink, white};
 use std::borrow::Cow;
@@ -23,15 +22,6 @@ use toml::Value;
 pub type CcAudioNode = An<Pipe<Var, Follow<f64>>>;
 pub type CcArray = [f32; MAX_KNOBS_PER_GROUP];
 
-impl ToNet for CcAudioNode {
-    fn to_net(self) -> Net {
-        to_net(self)
-    }
-}
-
-pub trait ToNet {
-    fn to_net(self) -> Net;
-}
 pub trait CcInit {
     fn get_initial_cc(&self) -> CcArray;
 }
@@ -215,12 +205,15 @@ impl Parameterized {
         }
     }
 
-    /// Returns an ADSR envelope in a `Box` based on internal parameters.
-    pub fn boxed_adsr(&self, adsr_param_name: &str, state: &SharedMidiState) -> Box<dyn AudioUnit> {
+    /// Returns a static ADSR envelope in a `Box` based on internal parameters.
+    pub fn boxed_static_adsr(
+        &self,
+        adsr_param_name: &str,
+        state: &SharedMidiState,
+    ) -> Box<dyn AudioUnit> {
         let control = state.gate_var();
         if let Ok(param) = self.get_non_cc_param(adsr_param_name) {
             Box::new(
-                // todo: make into a generic struct that returns boxed audiounit
                 control
                     >> adsr_live(
                         param.value.as_array().unwrap()[0],
@@ -233,6 +226,21 @@ impl Parameterized {
             // default:
             Box::new(control >> adsr_live(0.001, 0.001, 0.95, 0.3))
         }
+    }
+
+    fn get_cc_adsr_params(
+        &self,
+        state: &SharedMidiState,
+        attack: &str,
+        decay: &str,
+        sustain: &str,
+        release: &str,
+    ) -> (CcAudioNode, CcAudioNode, CcAudioNode, CcAudioNode) {
+        let attack = self.sound_cc_or_map(attack, state, |x| x.value.as_f32().unwrap() / 10.0);
+        let decay = self.sound_cc_or_map(decay, state, |x| x.value.as_f32().unwrap() / 10.0);
+        let sustain = self.sound_cc_or_default(sustain, state);
+        let release = self.sound_cc_or_map(release, state, |x| x.value.as_f32().unwrap() / 10.0);
+        (attack, decay, sustain, release)
     }
 
     fn get_cc_param(&self, name: &str) -> anyhow::Result<&CcParam> {
@@ -415,6 +423,9 @@ pub enum OscillatorType {
     Sine,
     Pulse,
     Square,
+    Lorenz,
+    Hammond,
+    OrganWave,
     WaveTable(PathBuf),
     None,
 }
@@ -430,6 +441,10 @@ impl FromStr for OscillatorType {
             "pulse" => Ok(OscillatorType::Pulse),
             "square" => Ok(OscillatorType::Square),
             "none" => Ok(OscillatorType::None),
+            "lorenz" => Ok(OscillatorType::Lorenz),
+            "hammond" => Ok(OscillatorType::Hammond),
+            "organ_wave" => Ok(OscillatorType::OrganWave),
+            "organ" => Ok(OscillatorType::OrganWave),
             // assuming that other text is for wavetable path:
             file_path => Ok(OscillatorType::WaveTable(file_path.parse().unwrap())),
         }
@@ -457,6 +472,9 @@ impl ParamNode<U1, U1> for OscillatorType {
             OscillatorType::Pulse => to_mono_unit(Box::new(poly_square())),
             OscillatorType::Square => to_mono_unit(Box::new(poly_square())),
             OscillatorType::None => to_mono_unit(Box::new(sine() * 0.0)),
+            OscillatorType::Lorenz => to_mono_unit(Box::new(lorenz())),
+            OscillatorType::Hammond => to_mono_unit(Box::new(hammond())),
+            OscillatorType::OrganWave => to_mono_unit(Box::new(organ())),
             OscillatorType::WaveTable(s) => to_mono_unit(Self::wavetable_synth_from_path(s)),
         }
     }
@@ -476,11 +494,16 @@ impl OscillatorType {
         // nullify the second value for osc that don't support pulse width
         let pw_sinker = (pass() | pass() * 0.0) >> join::<U2>();
         match self {
-            OscillatorType::Saw => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
-            OscillatorType::Triangle => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
-            OscillatorType::Sine => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
+            OscillatorType::Saw
+            | OscillatorType::Triangle
+            | OscillatorType::Sine
+            | OscillatorType::Square
+            | OscillatorType::Lorenz
+            | OscillatorType::Hammond
+            | OscillatorType::OrganWave => {
+                stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node()))
+            }
             OscillatorType::Pulse => stereo_to_mono_unit(Box::new(pulse())),
-            OscillatorType::Square => stereo_to_mono_unit(Box::new(pw_sinker >> self.get_node())),
             OscillatorType::None => stereo_to_mono_unit(Box::new(pw_sinker >> sine() * 0.0)),
             OscillatorType::WaveTable(s) => {
                 stereo_to_mono_unit(Box::new(pw_sinker >> *Self::wavetable_synth_from_path(&s)))

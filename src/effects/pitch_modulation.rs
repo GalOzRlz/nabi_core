@@ -47,9 +47,9 @@ pub fn pitch_shifter(pitch_st: &NonCcParam, freq_hz: &NonCcParam) -> An<Unit<U1,
     let shifted_env = shifted * window_env;
 
     // Smooth with short decay delay
-    let feedback_line = feedback(delay(0.003) * 0.5);
+    let feedback_line = feedback(delay(0.003) * 0.2);
 
-    let wet = Box::new(shifted_env >> feedback_line);
+    let wet = Box::new(shifted_env * 1.5 >> feedback_line);
     to_mono_unit(wet)
 }
 

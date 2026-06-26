@@ -120,6 +120,7 @@ impl CombPluck {
         self.buffer.fill(0.0);
         self.write_pos = 0;
         self.read_pos_f = 0.0;
+        self.filter_state = 0.0;
     }
 
     /// Update the fractional read position based on current frequency.
@@ -145,7 +146,6 @@ impl CombPluck {
         // euclidean modulo
         let max = self.max_delay_samples_f32;
         self.read_pos_f = raw_read - max * (raw_read * self.inv_max_delay).floor();
-        self.read_pos_f = raw_read - max * (raw_read * self.inv_max_delay).floor();
     }
 
     /// Process one sample through the comb filter.
@@ -163,9 +163,7 @@ impl CombPluck {
         let delayed = self.buffer[idx1] * (1.0 - read_frac) + self.buffer[idx2] * read_frac;
 
         let output = delayed;
-        let filtered = if self.damping <= 0.0 {
-            delayed
-        } else {
+        let filtered = {
             // apply low pass to dampen
             let filtered = delayed * (1.0 - self.g) + self.filter_state * self.g;
             self.filter_state = filtered;
@@ -215,7 +213,7 @@ impl AudioNode for CombPluck {
         self.target_freq = input[0].max(0.0);
         let gate = input[1];
         let excitation = input[2].clamp(-1.0, 1.0);
-        let damping = input[3].clamp(-1.0, 1.0);
+        let damping = input[3].clamp(0.001, 1.0);
         if damping != self.damping {
             self.set_damping(damping);
         }
@@ -253,5 +251,5 @@ fn pluck_generic(
 }
 
 pub fn pluck_comb_string(polarity: Polarity) -> An<CombPluck> {
-    pluck_generic(0.990, 1.3, 1.0, 0.01, polarity)
+    pluck_generic(0.997, 1.0, 1.4, 0.01, polarity)
 }

@@ -42,8 +42,8 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         );
         summing_net = summing_net.add(new_voice);
     }
-    let synth = Box::new(summing_net);
-    state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
+    let synth = Box::new(summing_net * 0.6);
+    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
 }
 
 #[distributed_slice(SOUNDS)]

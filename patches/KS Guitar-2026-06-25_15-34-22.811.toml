@@ -1,0 +1,37 @@
+[[program]]
+function = "karplus_strong_comb"
+name = "KS Guitarredbird"
+
+[program.sound.values]
+decay = 0.11023622006177902
+attack = 0.0
+excitation = "white"
+damping = 0.007874015718698502
+polarity = "positive"
+
+[program.effects]
+chain = [
+    "pitch_shifter",
+    "eq2",
+    "tape_drift",
+    "reverb",
+]
+
+[program.effects.configs.pitch_shifter.values]
+pitch = 7.0
+grain_frequency = 60.0
+"%" = 0.2385826647281647
+
+[program.effects.configs.reverb.values]
+length = 1.8
+"%" = 0.3748031735420227
+damping = 0.750000011920929
+room_size = 5.0
+
+[program.effects.configs.eq2.values]
+highcut_freq = 0.5118110179901123
+highpass_q = 0.3499999940395355
+lp_max_frequency = 18000.0
+lowcut_freq = 0.0
+lowpass_q = 0.05000000074505806
+hp_max_frequency = 8000.0

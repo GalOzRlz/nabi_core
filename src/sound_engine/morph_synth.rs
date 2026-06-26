@@ -65,7 +65,7 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let morph2 =
         base_pitch2 >> osc2_a * (constant(1.0) - balance2_cc.clone()) & osc2_b * balance2_cc;
     let synth = Box::new(morph1 + morph2);
-    state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
+    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
 }
 
 #[distributed_slice(SOUNDS)]

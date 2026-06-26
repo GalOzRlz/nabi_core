@@ -9,7 +9,7 @@ use std::borrow::Cow;
 
 pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let damping = params.sound_cc_or_default("damping", state);
-    let attack = params.sound_cc_or_default("attack", state) * 2.5 + 0.002;
+    let attack = params.sound_cc_or_default("attack", state) * 1.0 + 0.005;
     let decay = params.sound_cc_or_default("decay", state) * 1.0 + 0.005;
     let polarity_param = params
         .get_non_cc_param("polarity")
@@ -24,10 +24,11 @@ pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> B
     let excitation_noise = params.get_noise_node_type("excitation").unwrap().get_node();
     let excitation_env = (state.gate_var() | attack | decay) >> cc_controlled_attack_decay();
     let synth = Box::new(
-        (state.bent_pitch() | state.gate_var() | excitation_noise * excitation_env | damping) >> ks,
+        (state.bent_pitch() | state.gate_var() | excitation_noise * excitation_env | damping)
+            >> ks * 1.4,
     );
 
-    state.assemble_pitched_sound(synth, params.boxed_adsr("adsr", state))
+    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
 }
 
 #[distributed_slice(SOUNDS)]

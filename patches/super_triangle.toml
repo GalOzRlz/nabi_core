@@ -1,14 +1,40 @@
 [[program]]
 function = "super_osc"
 name = "Super Triangle"
+
+[program.sound.values]
+detune_spread = 0.11811023950576782
+pulse_width = 0.5
+voice_count = 8
+max_spread_hz = 5.5
+osc = "saw"
+adsr = [
+    0.019999999552965164,
+    0.8999999761581421,
+    0.75,
+    0.3499999940395355,
+]
+
 [program.effects]
-chain = ["eq2", "reverb"]
+chain = [
+    "drift",
+    "eq2",
+    "reverb",
+]
+
 [program.effects.configs.reverb.values]
-# Construction parameters (never modulated)
+"%" = 0.31496062874794006
+length = 1.600000023841858
 room_size = 5.0
-damping   = 0.4
-length    = 2.2
-wet_amount = 0.5
+damping = 0.6499999761581421
+
+[program.effects.configs.drift.values]
+depth = 0.29921260476112366
+
 [program.effects.configs.eq2.values]
-lowcut = 0.0
-highcut = 1.0
+lp_max_frequency = 18000.0
+hp_max_frequency = 8000.0
+lowcut_freq = 0.0
+lowpass_q = 0.05000000074505806
+highcut_freq = 0.7007874250411987
+highpass_q = 0.3499999940395355
