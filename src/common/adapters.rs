@@ -117,7 +117,7 @@ where
                 self.net.crossfade(
                     self.nets_node_id,
                     Fade::Power,
-                    self.fadeout_sec,
+                    fadeout,
                     Box::new((self.inner)(self.params_temp)),
                 );
                 self.params_state = self.params_temp;
