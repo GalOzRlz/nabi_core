@@ -30,7 +30,7 @@ pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> B
     let excitation_env = (state.gate_var() | attack | decay) >> cc_controlled_attack_decay();
     let synth = Box::new(
         (state.bent_pitch() | state.gate_var() | excitation_noise * excitation_env | damping)
-            >> ks * 1.4,
+            >> ks * 2.0,
     );
 
     state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))

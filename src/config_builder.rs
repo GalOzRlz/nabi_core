@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use toml::Value;
 
 // ---------- dynamic knob sizing ----------
-pub const MAX_KNOBS_PER_GROUP: usize = 16;
+pub const MAX_KNOBS_PER_GROUP: usize = 127;
 
 fn default_fx_cc_vals() -> Vec<u8> {
     vec![74, 71, 76, 77]

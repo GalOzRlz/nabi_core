@@ -41,6 +41,10 @@ pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
     params_temp: [f32; N],
     process_cooldown_counter: usize,
     process_calls_threshold: usize,
+    fadeout: bool,
+    fadeout_sec: f32,
+    gate_dependant: bool,
+    gate_input: usize,
 }
 
 impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
@@ -52,7 +56,11 @@ impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M> {
             net: Net::new(M, M),
             nets_node_id: NodeId::new(),
             process_cooldown_counter: 0,
-            process_calls_threshold: 8000, // around 0.18 seconds for CC values to stabilize
+            process_calls_threshold: 512 * 2,
+            fadeout: true,
+            fadeout_sec: 0.1,
+            gate_dependant: false,
+            gate_input: 0,
         };
         assert!(
             N - M > 0,
@@ -69,30 +77,53 @@ where
     Const<M>: ToUInt,
     U<M>: Size<f32>,
 {
+    /// Set the gate input index and request to rebuild the Net only once the gate is changed
+    pub fn gate_dependency(&mut self, gate_input_idx: usize) {
+        self.gate_dependant = true;
+        self.gate_input = gate_input_idx;
+    }
+
+    pub fn set_fadeout_time(&mut self, fadeout_sec: f32) {
+        self.fadeout_sec = fadeout_sec;
+    }
+
+    pub fn set_fadeout(&mut self, bool: bool) {
+        self.fadeout = bool;
+    }
+
     fn process_cc_events(&mut self, input: &Frame<f32, U<N>>) {
         let mut new_params = [0.0; N];
-        for i in M..N {
+        for i in 0..self.params_state.len() {
             new_params[i] = input[i];
         }
 
-        if new_params != self.params_temp {
+        if new_params[M..N] != self.params_temp[M..N] {
             self.params_temp = new_params;
             self.process_cooldown_counter = 0;
         } else {
             self.process_cooldown_counter += 1;
         }
-        if self.params_temp != self.params_state
+        if self.params_temp[M..N] != self.params_state[M..N]
             && self.process_calls_threshold <= self.process_cooldown_counter
         {
-            self.net.crossfade(
-                self.nets_node_id,
-                Fade::Smooth,
-                0.001,
-                Box::new((self.inner)(self.params_temp)),
-            );
-            self.params_state = self.params_temp;
-            eprintln!("changed value!!!");
-            return;
+            if self.gate_dependant == true && new_params[self.gate_input] >= 0.0 {
+            } else {
+                println!("rebuilding as new value");
+                let fadeout = if self.fadeout {
+                    self.fadeout_sec
+                } else {
+                    0.001
+                };
+                self.net.crossfade(
+                    self.nets_node_id,
+                    Fade::Power,
+                    self.fadeout_sec,
+                    Box::new((self.inner)(self.params_temp)),
+                );
+                self.params_state = self.params_temp;
+                eprintln!("changed value!!!");
+                return;
+            }
         }
         self.process_cooldown_counter += 1
     }

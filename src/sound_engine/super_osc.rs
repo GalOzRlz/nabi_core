@@ -1,6 +1,7 @@
 use crate::SharedMidiState;
+use crate::common::envelopes::assemble_cc_adsr;
 use crate::common::fundsp::to_net;
-use crate::common::params::ParamType::{ADSR, Float32, Oscillator, U8};
+use crate::common::params::ParamType::{Float32, Oscillator, U8};
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::sound_engine::common::cc_unidirectional_spread_step;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
@@ -11,8 +12,13 @@ use linkme::distributed_slice;
 use std::borrow::Cow;
 use std::ops::Add;
 
-/// add live adsr
 pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
+    let a = params.sound_cc_or_default("attack", state);
+    let d = params.sound_cc_or_default("decay", state);
+    let s = params.sound_cc_or_default("sustain", state);
+    let r = params.sound_cc_or_default("release", state);
+    let cc_adsr = assemble_cc_adsr(a, d, s, r);
+
     let max_spread_hz = params
         .get_non_cc_param("max_spread_hz")
         .unwrap()
@@ -37,13 +43,13 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
     for num in 0..voice_count {
         let step_val = -constant(max_spread_hz) + (spread_step.clone() * num as f32);
         let new_voice = Net::pipe(
-            (state.bent_pitch().add(step_val.clone()) | pulse_width.clone()),
+            state.bent_pitch().add(step_val.clone()) | pulse_width.clone(),
             to_net(osc.clone()),
         );
         summing_net = summing_net.add(new_voice);
     }
     let synth = Box::new(summing_net * 0.6);
-    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
+    state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
 
 #[distributed_slice(SOUNDS)]
@@ -64,16 +70,35 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 name: "detune_spread",
                 description: Some("The amount of spread for voice detuning"),
             },
+            CcParam {
+                value: ParamType::ZeroTenFloat(0.005),
+                cc_norm_index: 2,
+                name: "attack",
+                description: Some("attack rate: with CC goes from 0.0 to 5 seconds"),
+            },
+            CcParam {
+                value: ParamType::ZeroTenFloat(0.1),
+                cc_norm_index: 3,
+                name: "decay",
+                description: Some("decay rate: with CC goes from 0.0 to 5 seconds"),
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(1.0),
+                cc_norm_index: 4,
+                name: "sustain",
+                description: Some("sustain level from 0.0 to 1.0"),
+            },
+            CcParam {
+                value: ParamType::ZeroTenFloat(0.2),
+                cc_norm_index: 5,
+                name: "release",
+                description: Some("decay rate: with CC goes from 0.0 to 5 seconds"),
+            },
         ])),
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
                 value: Oscillator(Cow::Borrowed("saw")),
                 name: "osc",
-                description: None,
-            },
-            NonCcParam {
-                value: ADSR([0.02, 0.9, 0.75, 0.35]),
-                name: "adsr",
                 description: None,
             },
             NonCcParam {
