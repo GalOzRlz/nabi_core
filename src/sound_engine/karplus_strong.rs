@@ -47,7 +47,7 @@ static KS_COMB: SoundFactory = SoundFactory {
                 cc_norm_index: 1,
                 name: "damping",
                 description: Some(
-                    "damping factor of the physical string - the higher it gets the more higher frequencies are supressed over time and shorter the decay becomes",
+                    "damping factor of the physical string - the higher it gets the duller the sound becomes",
                 ),
             },
             CcParam {
@@ -55,7 +55,7 @@ static KS_COMB: SoundFactory = SoundFactory {
                 cc_norm_index: 2,
                 name: "exciter_lp",
                 description: Some(
-                    "the frequency of a lowpass filter on the excitation noise itself",
+                    "the cut off frequency of a lowpass filter which is applied to the excitation noise",
                 ),
             },
             CcParam {
