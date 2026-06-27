@@ -69,7 +69,7 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let morph2 =
         base_pitch2 >> osc2_a * (constant(1.0) - balance2_cc.clone()) & osc2_b * balance2_cc;
     let synth = Box::new(morph1 + morph2);
-    state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
+    state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
 
 #[distributed_slice(SOUNDS)]
@@ -122,6 +122,30 @@ static MORPH2: SoundFactory = SoundFactory {
                 name: "detune2",
                 description: None,
             },
+            CcParam {
+                value: ParamType::ZeroTenFloat(0.005),
+                cc_norm_index: 5,
+                name: "attack",
+                description: Some("attack rate: with CC goes from 0.0 to 5 seconds"),
+            },
+            CcParam {
+                value: ParamType::ZeroTenFloat(0.1),
+                cc_norm_index: 6,
+                name: "decay",
+                description: Some("decay rate: with CC goes from 0.0 to 5 seconds"),
+            },
+            CcParam {
+                value: ParamType::ZeroOneFloat(1.0),
+                cc_norm_index: 7,
+                name: "sustain",
+                description: Some("sustain level from 0.0 to 1.0"),
+            },
+            CcParam {
+                value: ParamType::ZeroTenFloat(0.2),
+                cc_norm_index: 8,
+                name: "release",
+                description: Some("decay rate: with CC goes from 0.0 to 5 seconds"),
+            },
         ])),
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
@@ -135,7 +159,7 @@ static MORPH2: SoundFactory = SoundFactory {
                 description: None,
             },
             NonCcParam {
-                value: ParamType::Oscillator(Cow::Borrowed("sine")),
+                value: ParamType::Oscillator(Cow::Borrowed("organ")),
                 name: "osc2_a",
                 description: None,
             },

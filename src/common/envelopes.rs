@@ -1,3 +1,4 @@
+use crate::GATE_OFF;
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::params::{CcAudioNode, CcParam, ParamType};
@@ -77,8 +78,8 @@ pub fn cc_controlled_attack_decay() -> An<StaticParamsAudioNodeAdapter<3, 1>> {
 
 pub fn assemble_cc_adsr(a: CcAudioNode, d: CcAudioNode, s: CcAudioNode, r: CcAudioNode) -> CcADSR {
     let mut cc_adsr = cc_controlled_adsr();
-    cc_adsr.gate_dependency(0);
-    cc_adsr.set_fadeout(false);
+    cc_adsr.rebuild_on_condition(|x| x[0] == GATE_OFF);
+    cc_adsr.disable_fadeout();
     (pass() | a | d | s | r) >> cc_adsr
 }
 
