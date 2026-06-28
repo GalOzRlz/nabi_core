@@ -318,7 +318,8 @@ impl SuperOSC {
     }
     fn rebuild_spread_step(&mut self, voice_count: usize) {
         let spread_hz = self.get_spread_hz();
-        spread_hz.clone() >> cc_unidirectional_spread_step(self.max_spread_hz, voice_count);
+        self.spread_step =
+            spread_hz.clone() >> cc_unidirectional_spread_step(self.max_spread_hz, voice_count);
     }
 
     fn populate_node_pool(&mut self) {
