@@ -1,4 +1,5 @@
 use crate::SharedMidiState;
+use crate::common::envelopes::CcADSR;
 use crate::common::helpers::{
     quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
 };
@@ -39,22 +40,21 @@ pub enum ParamType {
     String(Cow<'static, str>),
 }
 
-fn cc_to_param(param_type: &ParamType, v: f32) -> ParamType {
-    match param_type {
-        ParamType::ADSR(_)
-        | ParamType::Noise(_)
-        | ParamType::Oscillator(_)
-        | ParamType::String(_) => {
-            panic!("Parameter has no possible cc value!")
-        }
-        ParamType::ZeroTenFloat(_) => ParamType::ZeroOneFloat((v * 10.0).clamp(0.0, 10.0)),
-        ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
-        ParamType::Float32(_) => ParamType::Float32(v * 100.0),
-        ParamType::U8(_) => ParamType::U8((v * 127.0).clamp(0.0, 127.0).round() as u8),
-    }
-}
-
 impl ParamType {
+    pub fn with_cc_to_f32(&self, v: f32) -> ParamType {
+        match self {
+            ParamType::ADSR(_)
+            | ParamType::Noise(_)
+            | ParamType::Oscillator(_)
+            | ParamType::String(_) => {
+                panic!("Parameter has no possible cc value!")
+            }
+            ParamType::ZeroTenFloat(_) => ParamType::ZeroOneFloat((v * 10.0).clamp(0.0, 10.0)),
+            ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
+            ParamType::Float32(_) => ParamType::Float32(v * 100.0),
+            ParamType::U8(_) => ParamType::U8((v * 127.0).clamp(0.0, 127.0).round() as u8),
+        }
+    }
     pub fn to_toml_value(&self) -> Value {
         match self {
             ParamType::U8(a) => Value::Integer(*a as i64),
@@ -189,7 +189,7 @@ impl CcInit for Parameterized {
 }
 
 impl Parameterized {
-    pub fn param_from_cc_index(&self, idx: usize) -> Option<&CcParam> {
+    pub fn param_from_norm_index(&self, idx: usize) -> Option<&CcParam> {
         if let Some(cc_params) = self.cc_params.as_ref() {
             return cc_params.iter().find(|p| p.cc_norm_index == idx);
         }
@@ -219,30 +219,34 @@ impl Parameterized {
         adsr_param_name: &str,
         state: &SharedMidiState,
     ) -> Box<dyn AudioUnit> {
-        let control = state.gate_var();
+        let gate = state.gate_var();
         if let Ok(param) = self.get_non_cc_param(adsr_param_name) {
             Box::new(
-                control
-                    >> adsr_live(
-                        param.value.as_array().unwrap()[0],
-                        param.value.as_array().unwrap()[1],
-                        param.value.as_array().unwrap()[2],
-                        param.value.as_array().unwrap()[3],
-                    ),
+                gate >> adsr_live(
+                    param.value.as_array().unwrap()[0],
+                    param.value.as_array().unwrap()[1],
+                    param.value.as_array().unwrap()[2],
+                    param.value.as_array().unwrap()[3],
+                ),
             )
         } else {
             // default:
-            Box::new(control >> adsr_live(0.001, 0.001, 0.95, 0.3))
+            Box::new(gate >> adsr_live(0.001, 0.001, 0.95, 0.3))
         }
     }
 
-    fn get_cc_adsr_params(
+    pub fn boxed_cc_adsr(&self, adsr: CcADSR, state: &SharedMidiState) -> Box<dyn AudioUnit> {
+        let gate = state.gate_var();
+        Box::new(gate >> adsr)
+    }
+
+    pub(crate) fn get_cc_adsr_params(
         &self,
-        state: &SharedMidiState,
         attack: &str,
         decay: &str,
         sustain: &str,
         release: &str,
+        state: &SharedMidiState,
     ) -> (CcAudioNode, CcAudioNode, CcAudioNode, CcAudioNode) {
         let attack = self.sound_cc_or_map(attack, state, |x| x.value.as_f32().unwrap() / 10.0);
         let decay = self.sound_cc_or_map(decay, state, |x| x.value.as_f32().unwrap() / 10.0);
@@ -285,7 +289,7 @@ impl Parameterized {
             let params = cow_cc.to_mut();
             for def in params.iter_mut() {
                 if let Some(idx) = def.normalized_to_idx() {
-                    def.value = cc_to_param(&def.value, cc_array[idx]);
+                    def.value = def.value.with_cc_to_f32(cc_array[idx]);
                 }
             }
         }

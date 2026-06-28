@@ -587,13 +587,16 @@ impl<const N: usize> VoiceManager<N> {
                                 for state in self.states.iter_mut() {
                                     state.sound_cc_vals[idx].set_value(norm);
                                 }
-                                if let Some(cc_name) =
+                                if let Some(cc_param) =
                                     // logical is usize+1
-                                    current.sound_factory.params.param_from_cc_index(idx + 1)
+                                    current
+                                        .sound_factory
+                                        .params
+                                        .param_from_norm_index(idx + 1)
                                 {
                                     cc_line = format!(
                                         "{} {}",
-                                        cc_name.name.replace("_", " "),
+                                        cc_param.name.replace("_", " "),
                                         // todo: display decoder (from_cc)
                                         (norm * 100.0).round()
                                     );
@@ -603,14 +606,14 @@ impl<const N: usize> VoiceManager<N> {
                                 for state in self.states.iter_mut() {
                                     state.fx_cc_vals[idx].set_value(norm);
                                 }
-                                if let Some((fx_name, cc)) =
+                                if let Some((fx_name, cc_param)) =
                                     // logical is usize+1
-                                    current.effects.fx_and_param_from_index(idx + 1)
+                                    current.effects.fx_and_param_from_norm_index(idx + 1)
                                 {
                                     cc_line = format!(
                                         "{} {} {}",
                                         fx_name.to_uppercase(),
-                                        shorten_cc_name(cc.name),
+                                        shorten_cc_name(cc_param.name),
                                         (norm * 100.0).round()
                                     )
                                 };

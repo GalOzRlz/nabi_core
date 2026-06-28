@@ -30,7 +30,7 @@ pub fn karplus_strong_comb(state: &SharedMidiState, params: &Parameterized) -> B
     let excitation_env = (state.gate_var() | attack | decay) >> cc_controlled_attack_decay();
     let synth = Box::new(
         (state.bent_pitch() | state.gate_var() | excitation_noise * excitation_env | damping)
-            >> ks * 1.4,
+            >> ks * 2.0,
     );
 
     state.assemble_pitched_sound(synth, params.boxed_static_adsr("adsr", state))
@@ -47,7 +47,7 @@ static KS_COMB: SoundFactory = SoundFactory {
                 cc_norm_index: 1,
                 name: "damping",
                 description: Some(
-                    "damping factor of the physical string - the higher it gets the more higher frequencies are supressed over time and shorter the decay becomes",
+                    "damping factor of the physical string - the higher it gets the duller the sound becomes",
                 ),
             },
             CcParam {
@@ -55,7 +55,7 @@ static KS_COMB: SoundFactory = SoundFactory {
                 cc_norm_index: 2,
                 name: "exciter_lp",
                 description: Some(
-                    "the frequency of a lowpass filter on the excitation noise itself",
+                    "the cut off frequency of a lowpass filter which is applied to the excitation noise",
                 ),
             },
             CcParam {

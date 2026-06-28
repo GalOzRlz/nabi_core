@@ -47,10 +47,10 @@ pub const MAX_MIDI_VALUE: u8 = 127;
 pub const NUM_MIDI_VALUES: usize = MAX_MIDI_VALUE as usize + 1;
 
 /// Control value in response to `Note On` event.
-pub const CONTROL_ON: f32 = 1.0;
+pub const GATE_ON: f32 = 1.0;
 
 /// Control value in response to `Note Off` event.
-pub const CONTROL_OFF: f32 = -1.0;
+pub const GATE_OFF: f32 = -1.0;
 
 fn shared_array_to_f32_array(cc_vals: &SharedArray) -> CcArray {
     cc_vals
@@ -84,7 +84,7 @@ impl Default for SharedMidiState {
         Self {
             pitch: Default::default(),
             velocity: Default::default(),
-            gate: shared(CONTROL_OFF),
+            gate: shared(GATE_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             sound_cc_vals: core::array::from_fn(|_| Shared::new(0.0)),
@@ -180,7 +180,7 @@ impl SharedMidiState {
         Net::wrap(Box::new(var(&self.pitch_bend) * var(&self.pitch)))
     }
 
-    /// Returns `CONTROL_ON` if `Note On` is the most recent event for this pitch, and `CONTROL_OFF` otherwise.
+    /// Returns `GATE_ON` if `Note On` is the most recent event for this pitch, and `GATE_OFF` otherwise.
     pub fn gate_var(&self) -> An<Var> {
         var(&self.gate)
     }
@@ -231,12 +231,12 @@ impl SharedMidiState {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));
         self.velocity
             .set_value(velocity as f32 / MAX_MIDI_VALUE as f32);
-        self.gate.set_value(CONTROL_ON);
+        self.gate.set_value(GATE_ON);
     }
 
     /// Encodes a MIDI `Note Off` event.
     pub fn note_off(&self) {
-        self.gate.set_value(CONTROL_OFF);
+        self.gate.set_value(GATE_OFF);
     }
 
     /// Encodes a MIDI `Pitch Bend` event.
