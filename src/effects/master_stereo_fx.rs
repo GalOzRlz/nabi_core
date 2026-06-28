@@ -235,7 +235,7 @@ static J_CHORUS: EffectDef = EffectDef {
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroTenFloat(3.8),
+                value: ParamType::ZeroTenFloat(0.822), // Mode II on the Juno-60 (Mode I is around  0.5, III is  9.425)
                 cc_norm_index: 3,
                 name: "mod_freq",
                 description: None,
