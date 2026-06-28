@@ -2,6 +2,7 @@ use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
 use crate::common::params::{CcAudioNode, NonCcParam};
+use crate::effects::helpers::cc_controlled_wet_dry_fx;
 use crate::effects::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use fundsp::audiounit::Unit;
 use fundsp::combinator::An;
@@ -83,5 +84,5 @@ pub fn stereo_j_chorus(depth: CcAudioNode, mod_frequency: CcAudioNode) -> Net {
     let left_input =
         to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency.clone()) >> left_chorus);
     let right_input = to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency) >> right_chorus);
-    left_input | right_input
+    cc_controlled_wet_dry_fx(depth, left_input | right_input)
 }
