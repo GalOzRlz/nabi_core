@@ -265,7 +265,7 @@ pub fn pluck_comb_string(polarity: Polarity) -> An<CombPluck> {
 pub struct SuperOSC {
     node: Box<dyn AudioUnit>,
     node_pool: Vec<Net>,
-    node_id_vec: Vec<NodeId>,
+    active_node_id_vec: Vec<NodeId>,
     summing_net: Net,
     max_spread_hz: f32,
     detune_spread: CcNode,
@@ -284,14 +284,14 @@ impl SuperOSC {
         let spread_hz = detune_spread.clone() * max_spread_hz;
         let summing_net = Net::new(0, 1);
         let node_pool = Vec::with_capacity(max_voices);
-        let node_id_vec = Vec::with_capacity(max_voices);
+        let active_node_id_vec = Vec::with_capacity(max_voices);
         let spread_step =
             spread_hz.clone() >> cc_unidirectional_spread_step(max_spread_hz, max_voices);
 
         let mut s = SuperOSC {
             node,
             node_pool,
-            node_id_vec,
+            active_node_id_vec,
             summing_net,
             max_spread_hz,
             spread_step,
@@ -304,15 +304,15 @@ impl SuperOSC {
     }
 
     pub fn set_voice_count_target(&mut self, voice_count: usize) {
-        if voice_count <= 2 || voice_count == self.node_pool.len() {
+        if voice_count <= 2 || voice_count == self.active_node_id_vec.len() {
             return;
         }
         self.rebuild_spread_step(voice_count);
-        if voice_count > self.node_id_vec.len() {
-            let diff = voice_count - self.node_id_vec.len();
+        if voice_count > self.active_node_id_vec.len() {
+            let diff = voice_count - self.active_node_id_vec.len();
             self.add_voices_to_summing_net(diff);
-        } else if voice_count < self.node_id_vec.len() {
-            let diff = self.node_id_vec.len() - voice_count;
+        } else if voice_count < self.active_node_id_vec.len() {
+            let diff = self.active_node_id_vec.len() - voice_count;
             self.remove_voices_from_summing_net(diff);
         }
     }
@@ -333,7 +333,7 @@ impl SuperOSC {
 
     fn remove_voices_from_summing_net(&mut self, count: usize) {
         for _ in 0..count {
-            if let Some(id_to_remove) = self.node_id_vec.pop() {
+            if let Some(id_to_remove) = self.active_node_id_vec.pop() {
                 let node = unit::<U0, U1>(self.summing_net.remove(id_to_remove));
                 self.node_pool.push(to_net(node))
             }
@@ -344,7 +344,7 @@ impl SuperOSC {
         for _ in 0..count {
             if let Some(osc) = self.node_pool.pop() {
                 let new_id = self.summing_net.push(Box::new(osc));
-                self.node_id_vec.push(new_id);
+                self.active_node_id_vec.push(new_id);
             }
         }
     }
