@@ -4,7 +4,7 @@ use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Paramet
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
-use crate::effects::pitch_modulation::{pitch_shifter, tape_wow};
+use crate::effects::pitch_modulation::{pitch_shifter, stereo_j_chorus, tape_wow};
 use fundsp::prelude64::*;
 use linkme::distributed_slice;
 use std::borrow::Cow;
@@ -211,5 +211,36 @@ static LOFI_PITCH_SHIFTER: EffectDef = EffectDef {
                 description: Some("shiting pitch between -12.0 and +12.0 semitones"),
             },
         ])),
+    },
+};
+
+pub fn j_chorus(params: Arc<Parameterized>) -> EffectFunc {
+    Box::new(move |state| {
+        let depth = params.fx_cc_or_default("depth", state);
+        let mod_frequency = params.fx_cc_or_default("mod_freq", state);
+        stereo_j_chorus(depth, mod_frequency)
+    })
+}
+
+#[distributed_slice(EFFECTS)]
+static J_CHORUS: EffectDef = EffectDef {
+    factory: j_chorus,
+    params: Parameterized {
+        name: "j_chorus",
+        cc_params: Some(Cow::Borrowed(&[
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.8),
+                cc_norm_index: 2,
+                name: "depth",
+                description: None,
+            },
+            CcParam {
+                value: ParamType::ZeroTenFloat(3.8),
+                cc_norm_index: 3,
+                name: "mod_freq",
+                description: None,
+            },
+        ])),
+        non_cc_params: None,
     },
 };

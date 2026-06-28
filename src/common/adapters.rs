@@ -72,7 +72,7 @@ where
             net: Net::new(M, M),
             nets_node_id: NodeId::new(),
             process_cooldown_counter: 0,
-            process_calls_threshold: 512 * 2,
+            process_calls_threshold: 512 * 3,
             fadeout: true,
             fadeout_sec: 0.1,
             rebuild_condition_func: None,
