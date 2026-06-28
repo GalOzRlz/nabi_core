@@ -1,10 +1,10 @@
-use crate::common::params::CcAudioNode;
+use crate::common::params::CcNode;
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
 use fundsp::prelude64::{U2, constant, multipass, split};
 
 /// Factory for stereo effects with wet/dry control via Net  (suitable for live Midi CC)
-pub fn cc_controlled_wet_dry_fx(wet_amount: CcAudioNode, effect: Net) -> Net {
+pub fn cc_controlled_wet_dry_fx(wet_amount: CcNode, effect: Net) -> Net {
     // Duplicate wet to stereo (0 inputs, 2 outputs)
     let effect = to_stereo(effect);
     let wet_stereo = wet_amount.clone() | wet_amount.clone();

@@ -36,7 +36,13 @@ type RebuildConditionFn<const N: usize> = dyn Fn([f32; N]) -> bool + Send + Sync
 /// ( pass() | pass() | cc_1 | cc_2 |cc_3 ) >> reverb_adapter
 /// ```
 #[derive(Clone)]
-pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
+pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize>
+where
+    Const<N>: ToUInt,
+    U<N>: Size<f32>,
+    Const<M>: ToUInt,
+    U<M>: Size<f32>,
+{
     inner: GenericNetFunc<N>,
     net: Net,
     nets_node_id: NodeId,
@@ -50,6 +56,7 @@ pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
     rebuild_condition_func: Option<Arc<RebuildConditionFn<N>>>,
     rebuild_change_func: Option<Arc<RebuildChangeFn<N>>>,
     init_checker: bool,
+    output_buffer: GenericArray<f32, U<M>>,
 }
 
 impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M>
@@ -78,6 +85,7 @@ where
             rebuild_condition_func: None,
             rebuild_change_func: None,
             init_checker: true,
+            output_buffer: GenericArray::generate(|_| 0.0),
         }
     }
 
@@ -185,7 +193,6 @@ where
     }
 
     fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, Self::Outputs> {
-        let mut output = GenericArray::generate(|_| 0.0f32);
         // initialize with actual values on first tick()
         if self.init_checker {
             self.init_checker = false;
@@ -194,7 +201,7 @@ where
         } else {
             self.process_cc_events(input);
         }
-        self.net.tick(&input[0..M], &mut output);
-        Frame::from(output)
+        self.net.tick(&input[0..M], &mut self.output_buffer);
+        Frame::from(self.output_buffer.clone())
     }
 }

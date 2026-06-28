@@ -1,6 +1,6 @@
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
-use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Parameterized};
+use crate::common::params::{CcNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
@@ -16,10 +16,10 @@ pub fn master_limiter() -> Net {
 }
 
 fn cc_controlled_reverb(
-    wet_amount: CcAudioNode,
-    reverb_time: CcAudioNode,
-    room_size: CcAudioNode,
-    damping: CcAudioNode,
+    wet_amount: CcNode,
+    reverb_time: CcNode,
+    room_size: CcNode,
+    damping: CcNode,
 ) -> Net {
     let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
     let mut reverb_adapter = StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder);
@@ -235,7 +235,7 @@ static J_CHORUS: EffectDef = EffectDef {
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroTenFloat(3.8),
+                value: ParamType::ZeroTenFloat(0.822), // Mode II on the Juno-60 (Mode I is around  0.5, III is  9.425)
                 cc_norm_index: 3,
                 name: "mod_freq",
                 description: None,
