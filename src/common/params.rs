@@ -1,8 +1,11 @@
 use crate::SharedMidiState;
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::envelopes::CcADSR;
 use crate::common::helpers::{
     quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
 };
+use crate::common::modulators::smooth_random_lfo;
+use crate::common::params::LFO::{Noise, Osc, SmoothNoise};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
 use anyhow::anyhow;
 use fundsp::audionode::Pipe;
@@ -26,6 +29,56 @@ pub type CcArray = [f32; MAX_KNOBS_PER_GROUP];
 
 pub trait CcInit {
     fn get_initial_cc(&self) -> CcArray;
+}
+#[derive(Debug, Clone)]
+pub enum Switch {
+    ON,
+    OFF,
+}
+
+impl Switch {
+    fn to_bool(&self) -> bool {
+        match self {
+            Switch::ON => true,
+            Switch::OFF => false,
+        }
+    }
+}
+impl FromStr for Switch {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Switch, &'static str> {
+        let lower = s.to_lowercase();
+        match lower.as_str() {
+            "1" => Ok(Switch::ON),
+            "0" => Ok(Switch::OFF),
+            "on" => Ok(Switch::ON),
+            "off" => Ok(Switch::OFF),
+            "" => Ok(Switch::OFF),
+            _ => Err("Unrecognized switch type - only supports on/off 1/0"),
+        }
+    }
+}
+
+pub enum LFO {
+    Osc(OscillatorType),
+    Noise(NoiseType),
+    SmoothNoise(An<StaticParamsAudioNodeAdapter<1, 1>>),
+}
+
+impl FromStr for LFO {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<LFO, &'static str> {
+        let lower = s.to_lowercase();
+        if let Some(osc) = OscillatorType::from_str(&lower).ok() {
+            Ok(Osc(osc))
+        } else if let Some(noise) = NoiseType::from_str(&lower).ok() {
+            Ok(Noise(noise))
+        } else if lower.contains("smooth") {
+            Ok(SmoothNoise(smooth_random_lfo()))
+        } else {
+            Err("could not find proper lfo shape from value!")
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

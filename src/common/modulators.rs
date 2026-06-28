@@ -1,11 +1,17 @@
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
+use fundsp::audiounit::AudioUnit;
 use fundsp::funutd::math::Float;
 use fundsp::math::{SegmentInterpolator, ease_noise, spline_noise};
-use fundsp::prelude::WaveSynth;
-use fundsp::prelude64::{An, Constant, Net, Pipe, U1, follow, lfo, sine_hz};
+use fundsp::prelude64::{An, Net, U0, U1, follow, lfo, sine_hz, unit};
+use std::sync::Arc;
 
-fn handle_bipolar(lfo: Net, unipolar: bool) -> Net {
-    if unipolar { to_unipolar(lfo) } else { lfo }
+fn handle_bipolar(lfo: Net, change_to_unipolar: bool) -> Net {
+    if change_to_unipolar {
+        to_unipolar(lfo)
+    } else {
+        lfo
+    }
 }
 
 fn to_unipolar(lfo: Net) -> Net {
@@ -13,18 +19,21 @@ fn to_unipolar(lfo: Net) -> Net {
 }
 
 /// Accepts a raw oscillator function and return an lfo function that accepts frequency, phase and unipolar (true/false) settings
-pub fn lfo_builder<F>(osc: F) -> impl Fn(f32, f32, bool) -> Net
-where
-    F: Fn(f32) -> An<Pipe<Constant<U1>, WaveSynth<U1>>>,
-{
-    move |freq: f32, phase: f32, bipolar: bool| {
-        let raw = to_net(osc(freq).phase(phase));
-        handle_bipolar(raw, bipolar)
-    }
+pub fn lfo_builder(osc: Box<dyn AudioUnit>, to_unipolar: bool) -> Net {
+    let osc = to_net(unit::<U0, U1>(osc));
+    handle_bipolar(osc, to_unipolar)
 }
 
-pub fn smooth_random_lfo(freq: f64) -> Net {
-    to_net(lfo(move |t| spline_noise(1, t * freq)) >> follow(freq as f32 - 0.05))
+pub fn smooth_random_lfo_freq(freq: f32) -> Net {
+    to_net(lfo(move |t| spline_noise(1, t * freq as f64)) >> follow(freq - 0.05))
+}
+
+pub fn smooth_random_lfo() -> An<StaticParamsAudioNodeAdapter<1, 1>> {
+    let mut node = An(StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(
+        |args: [f32; 1]| smooth_random_lfo_freq(args[0]),
+    )));
+    node.disable_fadeout();
+    node
 }
 
 pub fn smooth_noise_constructor<T: Float + fundsp::Float>(
