@@ -1,6 +1,6 @@
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
-use crate::common::params::{CcAudioNode, CcParam, NonCcParam, ParamType, Parameterized};
+use crate::common::params::{CcNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
 use crate::effects::effects_building::{EFFECTS, EffectDef};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
@@ -16,17 +16,21 @@ pub fn master_limiter() -> Net {
 }
 
 fn cc_controlled_reverb(
-    wet_amount: CcAudioNode,
-    reverb_time: CcAudioNode,
-    room_size: CcAudioNode,
-    damping: CcAudioNode,
+    wet_amount: CcNode,
+    reverb_time: CcNode,
+    room_size: CcNode,
+    damping: CcNode,
 ) -> Net {
-    let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
+    let reverb_builder = Arc::new(|x: [f32; 5]| {
+        to_net(
+            reverb_stereo(x[2], x[3], x[4]) >> (highpass_hz(200.0, 0.2) | highpass_hz(200.0, 0.2)),
+        )
+    });
     let mut reverb_adapter = StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder);
     reverb_adapter.set_fadeout_time(0.5);
     let reverb =
     // assumes room size and reverb times are 0-10
-        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> An(reverb_adapter) * 1.3;
+        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> An(reverb_adapter) * 1.5;
     cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
 
@@ -144,7 +148,7 @@ static EQ2: EffectDef = EffectDef {
                 description: Some("The top frequency the high-cut will go to"),
             },
             NonCcParam {
-                value: ParamType::Float32(8_000.0),
+                value: ParamType::Float32(1_000.0),
                 name: "hp_max_frequency",
                 description: Some("The top frequency the low-cut will go to"),
             },
@@ -235,7 +239,7 @@ static J_CHORUS: EffectDef = EffectDef {
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroTenFloat(3.8),
+                value: ParamType::ZeroTenFloat(0.822), // Mode II on the Juno-60 (Mode I is around  0.5, III is  9.425)
                 cc_norm_index: 3,
                 name: "mod_freq",
                 description: None,
