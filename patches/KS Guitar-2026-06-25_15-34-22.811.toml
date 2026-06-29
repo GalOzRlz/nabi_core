@@ -34,4 +34,4 @@ highpass_q = 0.3499999940395355
 lp_max_frequency = 18000.0
 lowcut_freq = 0.0
 lowpass_q = 0.05000000074505806
-hp_max_frequency = 8000.0
+hp_max_frequency = 1000.0

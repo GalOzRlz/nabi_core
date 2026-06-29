@@ -8,7 +8,7 @@ use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
 use fundsp::prelude::constant;
-use fundsp::prelude64::An;
+use fundsp::prelude64::{An, dc};
 use linkme::distributed_slice;
 use std::borrow::Cow;
 use std::ops::Add;
@@ -18,7 +18,7 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
     let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
     let cc_adsr = assemble_cc_adsr(a, d, s, r);
 
-    let vc = params.sound_cc_or_default("voice_count", state); // input CC
+    let v_count_cc = params.sound_cc_or_default("harmony", state); // input CC
 
     let params_owned = params.clone();
     let state_owned = state.clone();
@@ -39,7 +39,7 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
             .unwrap();
 
         let voice_count = if args[0] > 0.3 {
-            (args[0] * 20.0) as usize
+            (args[0] * 15.0) as usize
         } else {
             3.0 as usize
         };
@@ -70,13 +70,12 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
             let voice = (current_pitch | pulse_width.clone()) >> osc.clone();
             summing_net = summing_net.add(voice);
         }
-
-        println!("Rebuild: voices={}", voice_count);
-
-        summing_net
+        let gain = 1.0 / (voice_count as f32).sqrt();
+        //println!("Rebuild: voices={}", voice_count);
+        summing_net * dc(gain)
     }));
-    synth.set_fadeout_time(0.1);
-    let final_synth = vc >> An(synth);
+    synth.set_fadeout_time(0.005);
+    let final_synth = v_count_cc >> An(synth);
     let synth = Box::new(final_synth);
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
@@ -101,8 +100,8 @@ static SUPER_OSC: SoundFactory = SoundFactory {
             CcParam {
                 value: ParamType::Float32(8.0),
                 cc_norm_index: 2,
-                name: "voice_count",
-                description: Some("how many detuned voices per note? from 3 to 20"),
+                name: "harmony",
+                description: Some("how many detuned voices per note? CC goes from from 3 to 15"),
             },
             CcParam {
                 value: ParamType::ZeroTenFloat(0.005),
@@ -136,7 +135,7 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 description: None,
             },
             NonCcParam {
-                value: Float32(5.5),
+                value: Float32(5.0),
                 name: "max_spread_hz",
                 description: Some(
                     "The maximal frequency for unidirectional spreading (e.g., 20hz means between -20hz and +20hz)",

@@ -30,7 +30,7 @@ fn cc_controlled_reverb(
     reverb_adapter.set_fadeout_time(0.5);
     let reverb =
     // assumes room size and reverb times are 0-10
-        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> An(reverb_adapter) * 1.3;
+        (pass() | pass() | room_size * 10.0 | reverb_time * 10.0 | damping) >> An(reverb_adapter) * 1.5;
     cc_controlled_wet_dry_fx(wet_amount, to_net(reverb))
 }
 
@@ -148,7 +148,7 @@ static EQ2: EffectDef = EffectDef {
                 description: Some("The top frequency the high-cut will go to"),
             },
             NonCcParam {
-                value: ParamType::Float32(8_000.0),
+                value: ParamType::Float32(1_000.0),
                 name: "hp_max_frequency",
                 description: Some("The top frequency the low-cut will go to"),
             },
