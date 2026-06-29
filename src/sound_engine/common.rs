@@ -3,7 +3,7 @@ use fundsp::Frame;
 use fundsp::audionode::Map;
 use fundsp::audiounit::Unit;
 use fundsp::combinator::An;
-use fundsp::prelude64::{U1, map, semitone_ratio};
+use fundsp::prelude64::{U1, U2, map, semitone_ratio, unit};
 
 /// Generic mapping for cc values (0.0-1.0) resulting in frequency ratios matching the desired detuning.
 /// Used as a multiplier with the base frequency provided by the patch tuner.
@@ -33,4 +33,15 @@ pub(crate) fn cc_unidirectional_spread_step(max_hz: f32, step_count: usize) -> A
         (cc_net[0] * max_hz * 2.0) / step_count as f32
     }));
     to_mono_unit(mapper)
+}
+
+pub fn cc_to_cents_by_step(step_count: usize, current_step: usize) -> An<Unit<U2, U1>> {
+    assert!(current_step < step_count, "current_step is out of range!");
+    let mapper = Box::new(map(move |cc_net: &Frame<f32, U2>| {
+        let ratio = semitone_ratio(cc_net[1]);
+        let base = cc_net[0];
+        let spread_factor = 2.0 * (current_step as f32 / (step_count - 1) as f32) - 1.0;
+        ((ratio * base - base) * spread_factor) + base
+    }));
+    unit::<U2, U1>(mapper)
 }

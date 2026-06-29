@@ -21,7 +21,11 @@ fn cc_controlled_reverb(
     room_size: CcNode,
     damping: CcNode,
 ) -> Net {
-    let reverb_builder = Arc::new(|x: [f32; 5]| (to_net(reverb_stereo(x[2], x[3], x[4]))));
+    let reverb_builder = Arc::new(|x: [f32; 5]| {
+        to_net(
+            reverb_stereo(x[2], x[3], x[4]) >> (highpass_hz(200.0, 0.2) | highpass_hz(200.0, 0.2)),
+        )
+    });
     let mut reverb_adapter = StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder);
     reverb_adapter.set_fadeout_time(0.5);
     let reverb =

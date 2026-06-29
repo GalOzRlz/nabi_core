@@ -1,9 +1,9 @@
 use crate::SharedMidiState;
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::envelopes::assemble_cc_adsr;
-use crate::common::params::ParamType::{Float32, Oscillator};
+use crate::common::params::ParamType::{Float32, Oscillator, String};
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
-use crate::sound_engine::common::cc_unidirectional_spread_step;
+use crate::sound_engine::common::{cc_to_cents_by_step, cc_unidirectional_spread_step};
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
@@ -18,19 +18,26 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
     let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
     let cc_adsr = assemble_cc_adsr(a, d, s, r);
 
-    let max_spread_hz = params
-        .get_non_cc_param("max_spread_hz")
-        .unwrap()
-        .value
-        .as_f32()
-        .unwrap();
-
     let vc = params.sound_cc_or_default("voice_count", state); // input CC
 
     let params_owned = params.clone();
     let state_owned = state.clone();
 
     let mut synth = StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(move |args: [f32; 1]| {
+        let detune_by = params_owned
+            .get_non_cc_param("detune_by")
+            .unwrap()
+            .value
+            .as_string()
+            .unwrap();
+
+        let max_spread_hz = params_owned
+            .get_non_cc_param("max_spread_hz")
+            .unwrap()
+            .value
+            .as_f32()
+            .unwrap();
+
         let voice_count = if args[0] > 0.3 {
             (args[0] * 20.0) as usize
         } else {
@@ -38,19 +45,29 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         };
         let pulse_width = params_owned.sound_cc_or_default("pulse_width", &state_owned);
         let detune_spread = params_owned.sound_cc_or_default("detune_spread", &state_owned);
-        let spread_hz = detune_spread * max_spread_hz;
-
         let osc = params_owned.get_node_type("osc").unwrap().get_pwm_node();
-
-        let spread_step = spread_hz >> cc_unidirectional_spread_step(max_spread_hz, voice_count);
-
         let mut summing_net = Net::new(0, 1);
 
         let pitch = state_owned.bent_pitch().clone();
 
         for num in 0..voice_count {
-            let step_val = -constant(max_spread_hz) + (spread_step.clone() * num as f32);
-            let voice = (pitch.clone().add(step_val) | pulse_width.clone()) >> osc.clone();
+            let current_pitch = {
+                match detune_by {
+                    "hz" => {
+                        let spread_hz = detune_spread.clone() * max_spread_hz;
+                        let spread_step =
+                            spread_hz >> cc_unidirectional_spread_step(max_spread_hz, voice_count);
+                        let step_val =
+                            -constant(max_spread_hz) + (spread_step.clone() * num as f32);
+                        pitch.clone().add(step_val)
+                    }
+                    _ => {
+                        (pitch.clone() | detune_spread.clone())
+                            >> cc_to_cents_by_step(voice_count, num)
+                    }
+                }
+            };
+            let voice = (current_pitch | pulse_width.clone()) >> osc.clone();
             summing_net = summing_net.add(voice);
         }
 
@@ -123,6 +140,13 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 name: "max_spread_hz",
                 description: Some(
                     "The maximal frequency for unidirectional spreading (e.g., 20hz means between -20hz and +20hz)",
+                ),
+            },
+            NonCcParam {
+                value: String(Cow::Borrowed("cents")),
+                name: "detune_by",
+                description: Some(
+                    "Detuning by \"cents\" or by \"hz\" (maximal range is determined by max_spread_hz)",
                 ),
             },
         ])),
