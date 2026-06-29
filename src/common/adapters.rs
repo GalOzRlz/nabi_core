@@ -68,8 +68,8 @@ where
 {
     pub(crate) fn new(inner: GenericNetFunc<N>) -> Self {
         assert!(
-            N - M > 0,
-            "number of total inputs cannot be the same/lower as the number of outputs!"
+            N >= M,
+            "number of total inputs cannot be lower than the the number of outputs!"
         );
         StaticParamsAudioNodeAdapter {
             inner,

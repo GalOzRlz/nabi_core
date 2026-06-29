@@ -1,13 +1,18 @@
 use crate::SharedMidiState;
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::envelopes::assemble_cc_adsr;
-use crate::common::params::ParamType::{Float32, Oscillator, U8};
-use crate::common::params::{CcParam, NonCcParam, ParamNode, ParamType, Parameterized};
-use crate::sound_engine::instruments::SuperOSC;
+use crate::common::params::ParamType::{Float32, Oscillator};
+use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
+use crate::sound_engine::common::cc_unidirectional_spread_step;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
+use fundsp::net::Net;
+use fundsp::prelude::constant;
 use fundsp::prelude64::An;
 use linkme::distributed_slice;
 use std::borrow::Cow;
+use std::ops::Add;
+use std::sync::Arc;
 
 pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
@@ -19,15 +24,33 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         .value
         .as_f32()
         .unwrap();
+    let pulse_width = params.sound_cc_or_default("pulse_width", state);
+    let spread_hz = params.sound_cc_or_default("detune_spread", state) * max_spread_hz;
+    let osc = params.get_node_type("osc").unwrap().get_pwm_node();
+    let voice_count = params.sound_cc_or_default("voice_count", state);
+    let pitch = state.bent_pitch().clone();
+    let synth = StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(move |args: [f32; 1]| {
+        let mut summing_net = Net::new(0, 1);
+        let spread_step =
+            spread_hz.clone() >> cc_unidirectional_spread_step(max_spread_hz, args[0]);
+        let voice_count = {
+            if args[0] > 0.003 {
+                args[0] * 100.0
+            } else {
+                3.0
+            }
+        };
+        for num in 0..voice_count as usize {
+            let step_val = -constant(max_spread_hz) + (spread_step.clone() * num as f32);
+            let new_voice =
+                (pitch.clone().add(step_val.clone()) | pulse_width.clone()) >> osc.clone();
+            summing_net = summing_net.add(new_voice);
+        }
+        summing_net
+    }));
+    let final_synth = voice_count >> An(synth);
 
-    let detune_spread = params.sound_cc_or_default("detune_spread", state);
-    let voice_count = params.sound_cc_or_default("voice_count", state) * 100.0;
-
-    let osc = params.get_node_type("osc").unwrap().as_audiounit();
-    let synth = Box::new(
-        (state.bent_pitch() | voice_count)
-            >> An(SuperOSC::new(osc, detune_spread, 100, max_spread_hz)),
-    );
+    let synth = Box::new(final_synth);
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
 
@@ -37,6 +60,12 @@ static SUPER_OSC: SoundFactory = SoundFactory {
     params: Parameterized {
         name: "super_osc",
         cc_params: Some(Cow::Borrowed(&[
+            CcParam {
+                value: ParamType::ZeroOneFloat(0.5),
+                cc_norm_index: 0,
+                name: "pulse_width",
+                description: Some("Pulse width amount for the Pulse oscillator"),
+            },
             CcParam {
                 value: ParamType::ZeroOneFloat(0.15),
                 cc_norm_index: 1,
@@ -78,11 +107,6 @@ static SUPER_OSC: SoundFactory = SoundFactory {
             NonCcParam {
                 value: Oscillator(Cow::Borrowed("saw")),
                 name: "osc",
-                description: None,
-            },
-            NonCcParam {
-                value: U8(8),
-                name: "voice_count",
                 description: None,
             },
             NonCcParam {
