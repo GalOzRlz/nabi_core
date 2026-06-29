@@ -28,9 +28,9 @@ pub(crate) fn detune_map_semitone() -> An<Map<fn(&Frame<f32, U1>) -> f32, U1, f3
 /// Receives 0.0-1.0 values and outputs a step to use in unidirectional spreading.
 /// Maximum Hertz signifies the positive pole limit. E.g. 50 hz means a range from -50hz to +50hz.
 /// Step count signifies the amount of steps between negative pole and positive pole.
-pub(crate) fn cc_unidirectional_spread_step(max_hz: f32, step_count: f32) -> An<Unit<U1, U1>> {
+pub(crate) fn cc_unidirectional_spread_step(max_hz: f32, step_count: usize) -> An<Unit<U1, U1>> {
     let mapper = Box::new(map(move |cc_net: &Frame<f32, U1>| {
-        (cc_net[0] * max_hz * 2.0) / step_count.round()
+        (cc_net[0] * max_hz * 2.0) / step_count as f32
     }));
     to_mono_unit(mapper)
 }

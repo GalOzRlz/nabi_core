@@ -123,10 +123,7 @@ where
 
     pub fn set_fadeout_time(&mut self, fadeout_sec: f32) {
         self.fadeout_sec = fadeout_sec;
-    }
-
-    pub fn set_fadeout(&mut self, bool: bool) {
-        self.fadeout = bool;
+        self.enable_fadeout()
     }
 
     pub fn disable_fadeout(&mut self) {

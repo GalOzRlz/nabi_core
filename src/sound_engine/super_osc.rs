@@ -31,7 +31,11 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
     let state_owned = state.clone();
 
     let mut synth = StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(move |args: [f32; 1]| {
-        let voice_count = if args[0] > 0.3 { args[0] * 10.0 } else { 3.0 };
+        let voice_count = if args[0] > 0.3 {
+            (args[0] * 20.0) as usize
+        } else {
+            3.0 as usize
+        };
         let pulse_width = params_owned.sound_cc_or_default("pulse_width", &state_owned);
         let detune_spread = params_owned.sound_cc_or_default("detune_spread", &state_owned);
         let spread_hz = detune_spread * max_spread_hz;
@@ -44,17 +48,16 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
 
         let pitch = state_owned.bent_pitch().clone();
 
-        for num in 0..voice_count as usize {
+        for num in 0..voice_count {
             let step_val = -constant(max_spread_hz) + (spread_step.clone() * num as f32);
             let voice = (pitch.clone().add(step_val) | pulse_width.clone()) >> osc.clone();
             summing_net = summing_net.add(voice);
         }
 
-        println!("Rebuild: voices={}", voice_count as usize);
+        println!("Rebuild: voices={}", voice_count);
 
         summing_net
     }));
-    synth.enable_fadeout();
     synth.set_fadeout_time(0.1);
     let final_synth = vc >> An(synth);
     let synth = Box::new(final_synth);
@@ -79,10 +82,10 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 description: Some("The amount of spread for voice detuning"),
             },
             CcParam {
-                value: ParamType::ZeroTenFloat(8.0),
+                value: ParamType::Float32(8.0),
                 cc_norm_index: 2,
                 name: "voice_count",
-                description: Some("how many detuned voices per note? from 3 to 10"),
+                description: Some("how many detuned voices per note? from 3 to 20"),
             },
             CcParam {
                 value: ParamType::ZeroTenFloat(0.005),
