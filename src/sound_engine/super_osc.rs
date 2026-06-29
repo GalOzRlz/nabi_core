@@ -24,36 +24,42 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         .value
         .as_f32()
         .unwrap();
-    let pulse_width = params.sound_cc_or_default("pulse_width", state);
-    let spread_hz = params.sound_cc_or_default("detune_spread", state) * max_spread_hz;
-    let osc = params.get_node_type("osc").unwrap().get_pwm_node();
-    let voice_count = params.sound_cc_or_default("voice_count", state);
-    let pitch = state.bent_pitch().clone();
-    let synth = StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(move |args: [f32; 1]| {
+
+    let vc = params.sound_cc_or_default("voice_count", state); // input CC
+
+    let params_owned = params.clone();
+    let state_owned = state.clone();
+
+    let mut synth = StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(move |args: [f32; 1]| {
+        let voice_count = if args[0] > 0.3 { args[0] * 10.0 } else { 3.0 };
+        let pulse_width = params_owned.sound_cc_or_default("pulse_width", &state_owned);
+        let detune_spread = params_owned.sound_cc_or_default("detune_spread", &state_owned);
+        let spread_hz = detune_spread * max_spread_hz;
+
+        let osc = params_owned.get_node_type("osc").unwrap().get_pwm_node();
+
+        let spread_step = spread_hz >> cc_unidirectional_spread_step(max_spread_hz, voice_count);
+
         let mut summing_net = Net::new(0, 1);
-        let spread_step =
-            spread_hz.clone() >> cc_unidirectional_spread_step(max_spread_hz, args[0]);
-        let voice_count = {
-            if args[0] > 0.003 {
-                args[0] * 100.0
-            } else {
-                3.0
-            }
-        };
+
+        let pitch = state_owned.bent_pitch().clone();
+
         for num in 0..voice_count as usize {
             let step_val = -constant(max_spread_hz) + (spread_step.clone() * num as f32);
-            let new_voice =
-                (pitch.clone().add(step_val.clone()) | pulse_width.clone()) >> osc.clone();
-            summing_net = summing_net.add(new_voice);
+            let voice = (pitch.clone().add(step_val) | pulse_width.clone()) >> osc.clone();
+            summing_net = summing_net.add(voice);
         }
+
+        println!("Rebuild: voices={}", voice_count as usize);
+
         summing_net
     }));
-    let final_synth = voice_count >> An(synth);
-
+    synth.enable_fadeout();
+    synth.set_fadeout_time(0.1);
+    let final_synth = vc >> An(synth);
     let synth = Box::new(final_synth);
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
-
 #[distributed_slice(SOUNDS)]
 static SUPER_OSC: SoundFactory = SoundFactory {
     builder: super_osc,
@@ -73,10 +79,10 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 description: Some("The amount of spread for voice detuning"),
             },
             CcParam {
-                value: ParamType::Float32(8.0),
+                value: ParamType::ZeroTenFloat(8.0),
                 cc_norm_index: 2,
                 name: "voice_count",
-                description: Some("how many detuned voices per note? from 3 to 100"),
+                description: Some("how many detuned voices per note? from 3 to 10"),
             },
             CcParam {
                 value: ParamType::ZeroTenFloat(0.005),
