@@ -57,7 +57,7 @@ where
     rebuild_change_func: Option<Arc<RebuildChangeFn<N>>>,
     init_checker: bool,
     output_buffer: GenericArray<f32, U<M>>,
-    detection_lower_value: usize,
+    detection_lowest_value: usize,
 }
 
 impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M>
@@ -72,7 +72,7 @@ where
             N >= M,
             "number of total inputs cannot be lower than the the number of outputs!"
         );
-        let detection_lower_value = { if M == 1 { 0 } else { M } };
+        let detection_lowest_value = { if M == 1 { 0 } else { M } };
 
         StaticParamsAudioNodeAdapter {
             inner,
@@ -89,7 +89,7 @@ where
             rebuild_change_func: None,
             init_checker: true,
             output_buffer: GenericArray::generate(|_| 0.0),
-            detection_lower_value,
+            detection_lowest_value,
         }
     }
 
@@ -142,16 +142,16 @@ where
         for i in 0..self.params_state.len() {
             self.params_temp_cooldown[i] = input[i];
         }
-        if self.params_temp_cooldown[self.detection_lower_value..N]
-            != self.params_post_cooldown[self.detection_lower_value..N]
+        if self.params_temp_cooldown[self.detection_lowest_value..N]
+            != self.params_post_cooldown[self.detection_lowest_value..N]
         {
             self.params_post_cooldown = self.params_temp_cooldown;
             self.process_cooldown_counter = 0;
         } else {
             self.process_cooldown_counter += 1;
         }
-        if self.params_post_cooldown[self.detection_lower_value..N]
-            != self.params_state[self.detection_lower_value..N]
+        if self.params_post_cooldown[self.detection_lowest_value..N]
+            != self.params_state[self.detection_lowest_value..N]
             && self.process_calls_threshold <= self.process_cooldown_counter
         {
             if self.should_rebuild() {
