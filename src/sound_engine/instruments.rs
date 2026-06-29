@@ -1,4 +1,3 @@
-use crate::common::fundsp::to_net;
 use crate::common::params::CcNode;
 use crate::sound_engine::common::cc_unidirectional_spread_step;
 use fundsp::numeric_array::generic_array::GenericArray;
@@ -264,19 +263,17 @@ pub fn pluck_comb_string(polarity: Polarity) -> An<CombPluck> {
 #[derive(Clone)]
 pub struct SuperOSC {
     node: Box<dyn AudioUnit>,
-    node_pool: Vec<Net>,
+    node_pool: Vec<Box<dyn AudioUnit>>,
     active_node_id_vec: Vec<NodeId>,
     summing_net: Net,
     max_spread_hz: f32,
     detune_spread: CcNode,
     spread_step: SpreadStepNode,
-    bent_pitch: Net,
     output_buffer: GenericArray<f32, U1>,
 }
 impl SuperOSC {
     pub fn new(
         node: Box<dyn AudioUnit>,
-        bent_pitch: Net,
         detune_spread: CcNode,
         max_voices: usize,
         max_spread_hz: f32,
@@ -296,7 +293,6 @@ impl SuperOSC {
             max_spread_hz,
             spread_step,
             detune_spread,
-            bent_pitch,
             output_buffer: GenericArray::generate(|_| 0.0),
         };
         s.populate_node_pool();
@@ -304,7 +300,7 @@ impl SuperOSC {
     }
 
     pub fn set_voice_count_target(&mut self, voice_count: usize) {
-        if voice_count <= 2 || voice_count == self.active_node_id_vec.len() {
+        if voice_count < 3 || voice_count == self.active_node_id_vec.len() {
             return;
         }
         self.rebuild_spread_step(voice_count);
@@ -325,9 +321,8 @@ impl SuperOSC {
     fn populate_node_pool(&mut self) {
         for num in 0..self.node_pool.capacity() {
             let step_val = -dc(self.max_spread_hz) + (self.spread_step.clone() * num as f32);
-            let processed_node =
-                self.bent_pitch.clone().add(step_val) >> unit::<U1, U1>(self.node.clone());
-            self.node_pool.push(processed_node);
+            let processed_node = pass().add(step_val) >> unit::<U1, U1>(self.node.clone());
+            self.node_pool.push(Box::new(processed_node));
         }
     }
 
@@ -335,7 +330,7 @@ impl SuperOSC {
         for _ in 0..count {
             if let Some(id_to_remove) = self.active_node_id_vec.pop() {
                 let node = unit::<U0, U1>(self.summing_net.remove(id_to_remove));
-                self.node_pool.push(to_net(node))
+                self.node_pool.push(Box::new(node))
             }
         }
     }
@@ -343,7 +338,7 @@ impl SuperOSC {
     fn add_voices_to_summing_net(&mut self, count: usize) {
         for _ in 0..count {
             if let Some(osc) = self.node_pool.pop() {
-                let new_id = self.summing_net.push(Box::new(osc));
+                let new_id = self.summing_net.fade_in(Fade::Power, 0.008, osc);
                 self.active_node_id_vec.push(new_id);
             }
         }
@@ -355,7 +350,7 @@ impl SuperOSC {
 
 impl AudioNode for SuperOSC {
     const ID: u64 = 939999;
-    type Inputs = U1;
+    type Inputs = U2;
     type Outputs = U1;
 
     fn reset(&mut self) {
@@ -367,8 +362,8 @@ impl AudioNode for SuperOSC {
     }
 
     fn tick(&mut self, input: &Frame<f32, Self::Inputs>) -> Frame<f32, Self::Outputs> {
-        self.set_voice_count_target(input[0] as usize);
-        self.summing_net.tick(&[0.0], &mut self.output_buffer);
+        self.set_voice_count_target(input[1] as usize);
+        self.summing_net.tick(&[input[0]], &mut self.output_buffer);
         Frame::from(self.output_buffer.clone())
     }
 }

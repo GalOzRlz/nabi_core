@@ -21,14 +21,13 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         .unwrap();
 
     let detune_spread = params.sound_cc_or_default("detune_spread", state);
+    let voice_count = params.sound_cc_or_default("voice_count", state) * 100.0;
+
     let osc = params.get_node_type("osc").unwrap().as_audiounit();
-    let synth = Box::new(An(SuperOSC::new(
-        osc,
-        state.bent_pitch(),
-        detune_spread,
-        100,
-        max_spread_hz,
-    )));
+    let synth = Box::new(
+        (state.bent_pitch() | voice_count)
+            >> An(SuperOSC::new(osc, detune_spread, 100, max_spread_hz)),
+    );
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
 
@@ -43,6 +42,12 @@ static SUPER_OSC: SoundFactory = SoundFactory {
                 cc_norm_index: 1,
                 name: "detune_spread",
                 description: Some("The amount of spread for voice detuning"),
+            },
+            CcParam {
+                value: ParamType::Float32(8.0),
+                cc_norm_index: 2,
+                name: "voice_count",
+                description: Some("how many detuned voices per note? from 3 to 100"),
             },
             CcParam {
                 value: ParamType::ZeroTenFloat(0.005),
