@@ -23,7 +23,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use toml::Value;
 
-pub type CcAudioNode = An<Pipe<Var, Follow<f64>>>;
+pub type CcNode = An<Pipe<Var, Follow<f64>>>;
+
+pub type PwNode = An<Unit<U2, U1>>;
 
 pub type CcArray = [f32; MAX_KNOBS_PER_GROUP];
 
@@ -300,7 +302,7 @@ impl Parameterized {
         sustain: &str,
         release: &str,
         state: &SharedMidiState,
-    ) -> (CcAudioNode, CcAudioNode, CcAudioNode, CcAudioNode) {
+    ) -> (CcNode, CcNode, CcNode, CcNode) {
         let attack = self.sound_cc_or_map(attack, state, |x| x.value.as_f32().unwrap() / 10.0);
         let decay = self.sound_cc_or_map(decay, state, |x| x.value.as_f32().unwrap() / 10.0);
         let sustain = self.sound_cc_or_default(sustain, state);
@@ -348,15 +350,15 @@ impl Parameterized {
         }
     }
 
-    pub fn sound_cc_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {
+    pub fn sound_cc_or_default(&self, name: &str, shared: &SharedMidiState) -> CcNode {
         shared.sound_cc_or_default(&self.get_cc_param(name).unwrap())
     }
 
-    pub fn fx_cc_or_default(&self, name: &str, shared: &SharedMidiState) -> CcAudioNode {
+    pub fn fx_cc_or_default(&self, name: &str, shared: &SharedMidiState) -> CcNode {
         shared.fx_cc_or_default(&self.get_cc_param(name).unwrap())
     }
 
-    pub fn fx_cc_or_map<F>(&self, name: &str, shared: &SharedMidiState, func: F) -> CcAudioNode
+    pub fn fx_cc_or_map<F>(&self, name: &str, shared: &SharedMidiState, func: F) -> CcNode
     where
         F: FnOnce(&CcParam) -> f32,
     {
@@ -364,7 +366,7 @@ impl Parameterized {
         shared.fx_cc_or(&self.get_cc_param(name).unwrap(), post_fn)
     }
 
-    pub fn sound_cc_or_map<F>(&self, name: &str, shared: &SharedMidiState, func: F) -> CcAudioNode
+    pub fn sound_cc_or_map<F>(&self, name: &str, shared: &SharedMidiState, func: F) -> CcNode
     where
         F: FnOnce(&CcParam) -> f32,
     {
@@ -530,17 +532,21 @@ fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
 
 impl ParamNode<U1, U1> for OscillatorType {
     fn get_node(&self) -> An<Unit<U1, U1>> {
+        to_mono_unit(self.as_audiounit())
+    }
+
+    fn as_audiounit(&self) -> Box<dyn AudioUnit> {
         match self {
-            OscillatorType::Saw => to_mono_unit(Box::new(poly_saw())),
-            OscillatorType::Triangle => to_mono_unit(Box::new(triangle())),
-            OscillatorType::Sine => to_mono_unit(Box::new(sine())),
-            OscillatorType::Pulse => to_mono_unit(Box::new(poly_square())),
-            OscillatorType::Square => to_mono_unit(Box::new(poly_square())),
-            OscillatorType::None => to_mono_unit(Box::new(sine() * 0.0)),
-            OscillatorType::Lorenz => to_mono_unit(Box::new(lorenz())),
-            OscillatorType::Hammond => to_mono_unit(Box::new(hammond())),
-            OscillatorType::OrganWave => to_mono_unit(Box::new(organ())),
-            OscillatorType::WaveTable(s) => to_mono_unit(Self::wavetable_synth_from_path(s)),
+            OscillatorType::Saw => Box::new(poly_saw()),
+            OscillatorType::Triangle => Box::new(triangle()),
+            OscillatorType::Sine => Box::new(sine()),
+            OscillatorType::Pulse => Box::new(poly_square()),
+            OscillatorType::Square => Box::new(poly_square()),
+            OscillatorType::None => Box::new(sine() * 0.0),
+            OscillatorType::Lorenz => Box::new(lorenz()),
+            OscillatorType::Hammond => Box::new(hammond()),
+            OscillatorType::OrganWave => Box::new(organ()),
+            OscillatorType::WaveTable(s) => Self::wavetable_synth_from_path(s),
         }
     }
 }
@@ -555,7 +561,7 @@ impl OscillatorType {
         Box::new(An(synth))
     }
 
-    pub fn get_node_pw(&self) -> An<Unit<U2, U1>> {
+    pub fn get_pwm_node(&self) -> PwNode {
         // nullify the second value for osc that don't support pulse width
         let pw_sinker = (pass() | pass() * 0.0) >> join::<U2>();
         match self {
@@ -582,14 +588,20 @@ where
     M: ArrayLength + Send + Sync,
 {
     fn get_node(&self) -> An<Unit<N, M>>;
+
+    fn as_audiounit(&self) -> Box<dyn AudioUnit>;
 }
 
 impl ParamNode<U0, U1> for NoiseType {
     fn get_node(&self) -> An<Unit<U0, U1>> {
+        to_zero_mono_unit(self.as_audiounit())
+    }
+
+    fn as_audiounit(&self) -> Box<dyn AudioUnit> {
         match self {
-            NoiseType::White => to_zero_mono_unit(Box::new(white())),
-            NoiseType::Brown => to_zero_mono_unit(Box::new(brown())),
-            NoiseType::Pink => to_zero_mono_unit(Box::new(pink())),
+            NoiseType::White => Box::new(white()),
+            NoiseType::Brown => Box::new(brown()),
+            NoiseType::Pink => Box::new(pink()),
         }
     }
 }

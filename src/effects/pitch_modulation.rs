@@ -1,9 +1,9 @@
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
-use crate::common::modulators::{smooth_noise_constructor, smooth_random_lfo_freq};
-use crate::common::params::{CcAudioNode, NonCcParam};
+use crate::common::params::{CcNode, NonCcParam};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
+use crate::effects::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use fundsp::audiounit::Unit;
 use fundsp::combinator::An;
 use fundsp::math::smooth3;
@@ -54,11 +54,11 @@ pub fn pitch_shifter(pitch_st: &NonCcParam, freq_hz: &NonCcParam) -> An<Unit<U1,
     to_mono_unit(wet)
 }
 
-pub fn tape_wow(depth: CcAudioNode) -> Net {
+pub fn tape_wow(depth: CcNode) -> Net {
     let wow_ms_range = 0.025;
     let flutter_ms_range = 0.0022;
     let center = 0.030;
-    let wow_mod = smooth_random_lfo_freq(0.6);
+    let wow_mod = smooth_random_lfo(0.6);
     let flutter_mod = smooth_noise_constructor(smooth3, 9.0);
     let total_wow = (wow_mod * depth.clone() + 2.0) * wow_ms_range;
     let total_flutter = (flutter_mod * depth + 2.0) * flutter_ms_range;
@@ -77,7 +77,7 @@ pub fn cc_controlled_chorus(seed: u64) -> An<StaticParamsAudioNodeAdapter<4, 1>>
 }
 
 /// Stereo chorus inspired by the Juno-60, with cc controlled modulation frequency
-pub fn stereo_j_chorus(depth: CcAudioNode, mod_frequency: CcAudioNode) -> Net {
+pub fn stereo_j_chorus(depth: CcNode, mod_frequency: CcNode) -> Net {
     let left_chorus = cc_controlled_chorus(1);
     let right_chorus = cc_controlled_chorus(2);
 

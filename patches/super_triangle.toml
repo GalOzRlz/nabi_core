@@ -33,7 +33,7 @@ depth = 0.29921260476112366
 
 [program.effects.configs.eq2.values]
 lp_max_frequency = 18000.0
-hp_max_frequency = 8000.0
+hp_max_frequency = 1000.0
 lowcut_freq = 0.0
 lowpass_q = 0.05000000074505806
 highcut_freq = 0.7007874250411987

@@ -36,7 +36,13 @@ type RebuildConditionFn<const N: usize> = dyn Fn([f32; N]) -> bool + Send + Sync
 /// ( pass() | pass() | cc_1 | cc_2 |cc_3 ) >> reverb_adapter
 /// ```
 #[derive(Clone)]
-pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
+pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize>
+where
+    Const<N>: ToUInt,
+    U<N>: Size<f32>,
+    Const<M>: ToUInt,
+    U<M>: Size<f32>,
+{
     inner: GenericNetFunc<N>,
     net: Net,
     nets_node_id: NodeId,
@@ -50,6 +56,8 @@ pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize> {
     rebuild_condition_func: Option<Arc<RebuildConditionFn<N>>>,
     rebuild_change_func: Option<Arc<RebuildChangeFn<N>>>,
     init_checker: bool,
+    output_buffer: GenericArray<f32, U<M>>,
+    detection_lowest_value: usize,
 }
 
 impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M>
@@ -61,9 +69,11 @@ where
 {
     pub(crate) fn new(inner: GenericNetFunc<N>) -> Self {
         assert!(
-            N - M > 0,
-            "number of total inputs cannot be the same/lower as the number of outputs!"
+            N >= M,
+            "number of total inputs cannot be lower than the the number of outputs!"
         );
+        let detection_lowest_value = { if M == 1 { 0 } else { M } };
+
         StaticParamsAudioNodeAdapter {
             inner,
             params_post_cooldown: [0.0; N],
@@ -78,6 +88,8 @@ where
             rebuild_condition_func: None,
             rebuild_change_func: None,
             init_checker: true,
+            output_buffer: GenericArray::generate(|_| 0.0),
+            detection_lowest_value,
         }
     }
 
@@ -111,10 +123,7 @@ where
 
     pub fn set_fadeout_time(&mut self, fadeout_sec: f32) {
         self.fadeout_sec = fadeout_sec;
-    }
-
-    pub fn set_fadeout(&mut self, bool: bool) {
-        self.fadeout = bool;
+        self.enable_fadeout()
     }
 
     pub fn disable_fadeout(&mut self) {
@@ -133,14 +142,16 @@ where
         for i in 0..self.params_state.len() {
             self.params_temp_cooldown[i] = input[i];
         }
-
-        if self.params_temp_cooldown[M..N] != self.params_post_cooldown[M..N] {
+        if self.params_temp_cooldown[self.detection_lowest_value..N]
+            != self.params_post_cooldown[self.detection_lowest_value..N]
+        {
             self.params_post_cooldown = self.params_temp_cooldown;
             self.process_cooldown_counter = 0;
         } else {
             self.process_cooldown_counter += 1;
         }
-        if self.params_post_cooldown[M..N] != self.params_state[M..N]
+        if self.params_post_cooldown[self.detection_lowest_value..N]
+            != self.params_state[self.detection_lowest_value..N]
             && self.process_calls_threshold <= self.process_cooldown_counter
         {
             if self.should_rebuild() {
@@ -185,7 +196,6 @@ where
     }
 
     fn tick(&mut self, input: &Frame<f32, U<N>>) -> Frame<f32, Self::Outputs> {
-        let mut output = GenericArray::generate(|_| 0.0f32);
         // initialize with actual values on first tick()
         if self.init_checker {
             self.init_checker = false;
@@ -194,7 +204,7 @@ where
         } else {
             self.process_cc_events(input);
         }
-        self.net.tick(&input[0..M], &mut output);
-        Frame::from(output)
+        self.net.tick(&input[0..M], &mut self.output_buffer);
+        Frame::from(self.output_buffer.clone())
     }
 }

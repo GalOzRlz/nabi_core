@@ -24,7 +24,7 @@ mod sound_engine;
 pub mod tui;
 mod tuning;
 
-use crate::common::params::{CcArray, CcAudioNode, CcParam};
+use crate::common::params::{CcArray, CcNode, CcParam};
 use crate::config_builder::MAX_KNOBS_PER_GROUP;
 use common::cc::cc_smooth;
 use fundsp::math::midi_hz;
@@ -143,28 +143,28 @@ impl SharedMidiState {
         Some(var(&self.fx_cc_vals[norm_idx - 1]))
     }
 
-    pub fn fx_cc_or_default(&self, cc: &CcParam) -> CcAudioNode {
+    pub fn fx_cc_or_default(&self, cc: &CcParam) -> CcNode {
         self.fx_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
             >> cc_smooth()
     }
 
     /// Pulls values if they have a mapping - otherwise provides a normalized version of the values provided as defaults (from toml they exist, otherwise from coded defaults) as 0.0-1.0 float.
-    pub fn sound_cc_or_default(&self, cc: &CcParam) -> CcAudioNode {
+    pub fn sound_cc_or_default(&self, cc: &CcParam) -> CcNode {
         self.sound_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))
             >> cc_smooth()
     }
 
     /// Pulls FX CC value or a version of the default value mapped to a closure
-    pub fn fx_cc_or(&self, cc: &CcParam, failback: f32) -> CcAudioNode {
+    pub fn fx_cc_or(&self, cc: &CcParam, failback: f32) -> CcNode {
         self.fx_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(failback)))
             >> cc_smooth()
     }
 
     /// Pulls Sound CC or a version of the default value mapped to a closure
-    pub fn sound_cc_or(&self, cc: &CcParam, failback: f32) -> CcAudioNode {
+    pub fn sound_cc_or(&self, cc: &CcParam, failback: f32) -> CcNode {
         self.sound_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(failback)))
             >> cc_smooth()

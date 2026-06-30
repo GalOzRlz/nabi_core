@@ -1,6 +1,8 @@
 use fundsp::prelude64::*;
 use std::cmp::max;
 
+type SpreadStepNode = An<Pipe<Unop<Pipe<Var, Follow<f64>>, FrameMulScalar<U1>>, Unit<U1, U1>>>;
+
 #[derive(serde::Deserialize)]
 pub enum Polarity {
     Positive,
