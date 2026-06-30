@@ -1,9 +1,9 @@
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
+use crate::common::modulators::{smooth_noise_constructor, smooth_random_lfo_freq};
 use crate::common::params::{CcNode, NonCcParam};
 use crate::effects::helpers::cc_controlled_wet_dry_fx;
-use crate::effects::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use fundsp::audiounit::Unit;
 use fundsp::combinator::An;
 use fundsp::math::smooth3;
@@ -58,7 +58,7 @@ pub fn tape_wow(depth: CcNode) -> Net {
     let wow_ms_range = 0.025;
     let flutter_ms_range = 0.0022;
     let center = 0.030;
-    let wow_mod = smooth_random_lfo(0.6);
+    let wow_mod = smooth_random_lfo_freq(0.6);
     let flutter_mod = smooth_noise_constructor(smooth3, 9.0);
     let total_wow = (wow_mod * depth.clone() + 2.0) * wow_ms_range;
     let total_flutter = (flutter_mod * depth + 2.0) * flutter_ms_range;
