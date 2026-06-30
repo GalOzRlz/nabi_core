@@ -1,5 +1,4 @@
 use crate::SharedMidiState;
-use crate::common::fundsp::to_net;
 use crate::common::params::{LFO, OscillatorType, ParamNode, Parameterized, Switch};
 use fundsp::audiounit::AudioUnit;
 use std::str::FromStr;
@@ -29,12 +28,6 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
         .unwrap()
         .value
         .to_string();
-    let lfo_node = {
-        match LFO::from_str(lfo_string.as_str()).unwrap() {
-            LFO::Osc(s) => to_net(lfo_freq * lfo_depth >> s.get_node()),
-            LFO::Noise(s) => to_net(s.get_node()),
-            LFO::SmoothNoise(s) => to_net(lfo_freq * lfo_depth >> s),
-        }
-    };
-    todo!("implement proph 6 :)")
+    let lfo_node = lfo_freq * lfo_depth >> LFO::from_str(lfo_string.as_str()).unwrap().get_node();
+    todo!("still incomplete")
 }

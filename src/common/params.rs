@@ -5,15 +5,15 @@ use crate::common::helpers::{
     quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
 };
 use crate::common::modulators::smooth_random_lfo;
-use crate::common::params::LFO::{Noise, Osc, SmoothNoise};
+use crate::common::params::LFO::{Noise, Osc, SampleAndHold, SmoothNoise};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
 use anyhow::anyhow;
 use fundsp::audionode::Pipe;
 use fundsp::follow::Follow;
 use fundsp::numeric_array::ArrayLength;
 use fundsp::prelude64::{
-    An, AudioUnit, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, hammond, join,
-    lorenz, organ, pass, poly_saw, poly_square, pulse, sine, triangle,
+    An, AudioUnit, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, hammond, hold,
+    join, lorenz, organ, pass, poly_saw, poly_square, pulse, sine, triangle,
 };
 use fundsp::prelude64::{brown, pink, white};
 use std::borrow::Cow;
@@ -65,6 +65,7 @@ pub enum LFO {
     Osc(OscillatorType),
     Noise(NoiseType),
     SmoothNoise(An<StaticParamsAudioNodeAdapter<1, 1>>),
+    SampleAndHold,
 }
 
 impl FromStr for LFO {
@@ -77,8 +78,28 @@ impl FromStr for LFO {
             Ok(Noise(noise))
         } else if lower.contains("smooth") {
             Ok(SmoothNoise(smooth_random_lfo()))
+        } else if lower.contains("sample") || lower.contains("sh") {
+            Ok(SampleAndHold)
         } else {
             Err("could not find proper lfo shape from value!")
+        }
+    }
+}
+
+impl ParamNode<U1, U1> for LFO {
+    fn get_node(self) -> An<Unit<U1, U1>> {
+        match self {
+            Osc(noise) => noise.get_node(),
+            Noise(_) | SmoothNoise(_) | SampleAndHold => to_mono_unit(self.to_audiounit()),
+        }
+    }
+
+    fn to_audiounit(self) -> Box<dyn AudioUnit> {
+        match self {
+            Osc(osc) => osc.to_audiounit(),
+            Noise(noise) => Box::new(pass() * 0.0 | noise.get_node()),
+            SmoothNoise(smooth) => Box::new(smooth),
+            SampleAndHold => Box::new((pink() | pass()) >> hold(0.5)),
         }
     }
 }
@@ -89,6 +110,7 @@ pub enum ParamType {
     Oscillator(Cow<'static, str>),
     ZeroOneFloat(f32),
     ZeroTenFloat(f32),
+    MinusOneToOneFloat(f32),
     Float32(f32),
     ADSR([f32; 4]),
     Noise(Cow<'static, str>),
@@ -96,7 +118,7 @@ pub enum ParamType {
 }
 
 impl ParamType {
-    pub fn with_cc_to_f32(&self, v: f32) -> ParamType {
+    pub fn cc_to_f32(&self, v: f32) -> ParamType {
         match self {
             ParamType::ADSR(_)
             | ParamType::Noise(_)
@@ -108,6 +130,7 @@ impl ParamType {
             ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
             ParamType::Float32(_) => ParamType::Float32(v * 100.0),
             ParamType::U8(_) => ParamType::U8((v * 127.0).clamp(0.0, 127.0).round() as u8),
+            ParamType::MinusOneToOneFloat(_) => ParamType::MinusOneToOneFloat((v * 2.0) - 1.0),
         }
     }
     pub fn to_toml_value(&self) -> Value {
@@ -116,9 +139,10 @@ impl ParamType {
             ParamType::Oscillator(a) | ParamType::Noise(a) | ParamType::String(a) => {
                 Value::String(a.to_string())
             }
-            ParamType::ZeroOneFloat(a) | ParamType::Float32(a) | ParamType::ZeroTenFloat(a) => {
-                Value::Float(*a as f64)
-            }
+            ParamType::ZeroOneFloat(a)
+            | ParamType::Float32(a)
+            | ParamType::ZeroTenFloat(a)
+            | ParamType::MinusOneToOneFloat(a) => Value::Float(*a as f64),
             ParamType::ADSR(array) => Value::Array(
                 array
                     .to_vec()
@@ -146,6 +170,7 @@ impl ParamType {
             ParamType::ZeroTenFloat(v) => Ok((v.clamp(0.0, 10.0) / 10.0)),
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
             ParamType::String(_) => Err(anyhow!("ParamType::String has no numeric value!")),
+            ParamType::MinusOneToOneFloat(v) => Ok(((v / 2.0) + 1.0).clamp(0.0, 1.0)),
         }
     }
 
@@ -155,8 +180,9 @@ impl ParamType {
             ParamType::Oscillator(_) => Err(anyhow!("ParamType::Oscillator has no numeric value!")),
             ParamType::ADSR(_) => Err(anyhow!("ParamType::ADSR has no numeric value!")),
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
-            ParamType::Float32(v) => Ok(*v),
-            ParamType::ZeroTenFloat(v) => Ok(*v),
+            ParamType::Float32(v)
+            | ParamType::ZeroTenFloat(v)
+            | ParamType::MinusOneToOneFloat(v) => Ok(*v),
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
             ParamType::String(_) => Err(anyhow!("ParamType::String has no numeric value!")),
         }
@@ -188,7 +214,10 @@ impl std::fmt::Display for ParamType {
         match self {
             ParamType::U8(v) => write!(f, "{}", v),
             ParamType::Oscillator(s) => write!(f, "{}", s),
-            ParamType::ZeroOneFloat(v) | ParamType::Float32(v) | ParamType::ZeroTenFloat(v) => {
+            ParamType::ZeroOneFloat(v)
+            | ParamType::Float32(v)
+            | ParamType::ZeroTenFloat(v)
+            | ParamType::MinusOneToOneFloat(v) => {
                 write!(f, "{}", v)
             }
             ParamType::ADSR(v) => write!(f, "{:?}", v),
@@ -344,7 +373,7 @@ impl Parameterized {
             let params = cow_cc.to_mut();
             for def in params.iter_mut() {
                 if let Some(idx) = def.normalized_to_idx() {
-                    def.value = def.value.with_cc_to_f32(cc_array[idx]);
+                    def.value = def.value.cc_to_f32(cc_array[idx]);
                 }
             }
         }
@@ -435,7 +464,10 @@ where
     for param in params {
         if let Some(toml_value) = toml_overrides.get(param.get_name()) {
             match param.get_mut() {
-                ParamType::ZeroOneFloat(v) | ParamType::Float32(v) | ParamType::ZeroTenFloat(v) => {
+                ParamType::ZeroOneFloat(v)
+                | ParamType::Float32(v)
+                | ParamType::ZeroTenFloat(v)
+                | ParamType::MinusOneToOneFloat(v) => {
                     if let Some(num) = toml_value.as_float() {
                         *v = num as f32;
                     }
@@ -531,12 +563,12 @@ fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
 }
 
 impl ParamNode<U1, U1> for OscillatorType {
-    fn get_node(&self) -> An<Unit<U1, U1>> {
-        to_mono_unit(self.as_audiounit())
+    fn get_node(self) -> An<Unit<U1, U1>> {
+        to_mono_unit(self.to_audiounit())
     }
 
-    fn as_audiounit(&self) -> Box<dyn AudioUnit> {
-        match self {
+    fn to_audiounit(self) -> Box<dyn AudioUnit> {
+        match &self {
             OscillatorType::Saw => Box::new(poly_saw()),
             OscillatorType::Triangle => Box::new(triangle()),
             OscillatorType::Sine => Box::new(sine()),
@@ -561,7 +593,7 @@ impl OscillatorType {
         Box::new(An(synth))
     }
 
-    pub fn get_pwm_node(&self) -> PwNode {
+    pub fn get_pwm_node(self) -> PwNode {
         // nullify the second value for osc that don't support pulse width
         let pw_sinker = (pass() | pass() * 0.0) >> join::<U2>();
         match self {
@@ -587,17 +619,17 @@ where
     N: ArrayLength + Send + Sync,
     M: ArrayLength + Send + Sync,
 {
-    fn get_node(&self) -> An<Unit<N, M>>;
+    fn get_node(self) -> An<Unit<N, M>>;
 
-    fn as_audiounit(&self) -> Box<dyn AudioUnit>;
+    fn to_audiounit(self) -> Box<dyn AudioUnit>;
 }
 
 impl ParamNode<U0, U1> for NoiseType {
-    fn get_node(&self) -> An<Unit<U0, U1>> {
-        to_zero_mono_unit(self.as_audiounit())
+    fn get_node(self) -> An<Unit<U0, U1>> {
+        to_zero_mono_unit(self.to_audiounit())
     }
 
-    fn as_audiounit(&self) -> Box<dyn AudioUnit> {
+    fn to_audiounit(self) -> Box<dyn AudioUnit> {
         match self {
             NoiseType::White => Box::new(white()),
             NoiseType::Brown => Box::new(brown()),
