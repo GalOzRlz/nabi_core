@@ -43,7 +43,7 @@ pub fn pitch_shifter(pitch_st: &NonCcParam, freq_hz: &NonCcParam) -> An<Unit<U1,
     });
 
     // Apply the modulated delay line
-    let shifted = (pass() | mod_sig) >> tap(min_delay, max_delay);
+    let shifted = (pass() | mod_sig) >> tap_linear(min_delay, max_delay);
 
     let shifted_env = shifted * window_env;
 
