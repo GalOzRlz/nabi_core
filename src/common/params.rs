@@ -32,35 +32,6 @@ pub type CcArray = [f32; MAX_KNOBS_PER_GROUP];
 pub trait CcInit {
     fn get_initial_cc(&self) -> CcArray;
 }
-#[derive(Debug, Clone)]
-pub enum Switch {
-    ON,
-    OFF,
-}
-
-impl Switch {
-    fn to_bool(&self) -> bool {
-        match self {
-            Switch::ON => true,
-            Switch::OFF => false,
-        }
-    }
-}
-impl FromStr for Switch {
-    type Err = &'static str;
-    fn from_str(s: &str) -> Result<Switch, &'static str> {
-        let lower = s.to_lowercase();
-        match lower.as_str() {
-            "1" => Ok(Switch::ON),
-            "0" => Ok(Switch::OFF),
-            "on" => Ok(Switch::ON),
-            "off" => Ok(Switch::OFF),
-            "" => Ok(Switch::OFF),
-            _ => Err("Unrecognized switch type - only supports on/off 1/0"),
-        }
-    }
-}
-
 pub enum LFO {
     Osc(OscillatorType),
     Noise(NoiseType),
@@ -118,7 +89,7 @@ pub enum ParamType {
 }
 
 impl ParamType {
-    pub fn cc_to_f32(&self, v: f32) -> ParamType {
+    pub fn cc_to_param(&self, v: f32) -> ParamType {
         match self {
             ParamType::ADSR(_)
             | ParamType::Noise(_)
@@ -133,6 +104,7 @@ impl ParamType {
             ParamType::MinusOneToOneFloat(_) => ParamType::MinusOneToOneFloat((v * 2.0) - 1.0),
         }
     }
+
     pub fn to_toml_value(&self) -> Value {
         match self {
             ParamType::U8(a) => Value::Integer(*a as i64),
@@ -332,10 +304,11 @@ impl Parameterized {
         release: &str,
         state: &SharedMidiState,
     ) -> (CcNode, CcNode, CcNode, CcNode) {
-        let attack = self.sound_cc_or_map(attack, state, |x| x.value.as_f32().unwrap() / 10.0);
-        let decay = self.sound_cc_or_map(decay, state, |x| x.value.as_f32().unwrap() / 10.0);
+        // todo: make it up to 10/5 second with cc?
+        let attack = self.sound_cc_or_map(attack, state, |x| x.value.as_f32().unwrap());
+        let decay = self.sound_cc_or_map(decay, state, |x| x.value.as_f32().unwrap());
         let sustain = self.sound_cc_or_default(sustain, state);
-        let release = self.sound_cc_or_map(release, state, |x| x.value.as_f32().unwrap() / 10.0);
+        let release = self.sound_cc_or_map(release, state, |x| x.value.as_f32().unwrap());
         (attack, decay, sustain, release)
     }
 
@@ -373,7 +346,7 @@ impl Parameterized {
             let params = cow_cc.to_mut();
             for def in params.iter_mut() {
                 if let Some(idx) = def.normalized_to_idx() {
-                    def.value = def.value.cc_to_f32(cc_array[idx]);
+                    def.value = def.value.cc_to_param(cc_array[idx]);
                 }
             }
         }

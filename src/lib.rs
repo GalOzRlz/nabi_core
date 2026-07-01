@@ -149,7 +149,7 @@ impl SharedMidiState {
             >> cc_smooth()
     }
 
-    /// Pulls values if they have a mapping - otherwise provides a normalized version of the values provided as defaults (from toml they exist, otherwise from coded defaults) as 0.0-1.0 float.
+    /// Pulls values if they have a mapping - otherwise provides a normalized zero-to-one version of the values provided as defaults (from toml they exist, otherwise from coded defaults) as 0.0-1.0 float.
     pub fn sound_cc_or_default(&self, cc: &CcParam) -> CcNode {
         self.sound_cc(cc.cc_norm_index)
             .unwrap_or(var(&shared(cc.value.as_zero_to_one_f32().unwrap())))

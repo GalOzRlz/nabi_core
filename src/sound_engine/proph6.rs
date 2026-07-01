@@ -1,24 +1,7 @@
 use crate::SharedMidiState;
-use crate::common::params::{LFO, OscillatorType, ParamNode, Parameterized, Switch};
+use crate::common::params::{LFO, ParamNode, Parameterized};
 use fundsp::audiounit::AudioUnit;
 use std::str::FromStr;
-
-struct Proph6 {
-    a_osc1: OscillatorType,
-    a_osc2: OscillatorType,
-    a_osc3: OscillatorType,
-    b_osc1: OscillatorType,
-    b_osc2: OscillatorType,
-    b_osc3: OscillatorType,
-
-    polymod_freq_a: Switch,
-    polymod_filter: Switch,
-
-    lfo_mod_freq_ab: Switch,
-    lfo_mod_pw_ab: Switch,
-    lfo_mod_filter: Switch,
-    lfo_shape: LFO,
-}
 
 pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
     // osc A
@@ -27,6 +10,7 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_a3 = params.get_non_cc_param("osc_a2").unwrap();
     let osc_a_level = params.sound_cc_or_default("osc_a_level", state);
     let osc_a_pitch_shift = params.sound_cc_or_default("osc_a_pitch_shift", state);
+    // let osc_a_master = pitch (is modulated by b?) + pitch_shift semitones -5 -- +5 >> (all osc bus * level)
 
     // osc B
     let osc_b1 = params.get_non_cc_param("osc_b1").unwrap();
@@ -35,11 +19,8 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_b_level = params.sound_cc_or_default("osc_b_level", state);
 
     // filter
-    // cut off, q ..
-    let filter_evn_amount = (params
-        .sound_cc_or_map("lfo_freq", state, |x| x.value.as_zero_to_one_f32().unwrap())
-        * 2.0)
-        - 1.0; // -1 to +1
+    // missing cut off, q
+    let filter_env_amount = (params.sound_cc_or_default("filter_env_amount", state) * 2.0) - 1.0; // -1 to +1
 
     // envelops
     let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
