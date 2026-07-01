@@ -1,5 +1,6 @@
 use crate::SharedMidiState;
 use crate::common::envelopes::assemble_cc_adsr;
+use crate::common::fundsp::to_net;
 use crate::common::params::{LFO, ParamNode, Parameterized};
 use crate::effects::eqs::prophet_lowpass_filter;
 use fundsp::audiounit::AudioUnit;
@@ -17,7 +18,7 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
         state,
     );
     let master_adsr = assemble_cc_adsr(a, d, s, r);
-    let mod_adsr = assemble_cc_adsr(mod_a, mod_d, mod_s, mod_r);
+    let mod_adsr = state.gate_var() >> assemble_cc_adsr(mod_a, mod_d, mod_s, mod_r);
 
     // LFO
     let lfo_freq = params.sound_cc_or_default("lfo_freq", state);
@@ -44,7 +45,7 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_b_master_modulator = ((state.bent_pitch() * osc_b_pitch_shift) * lfo_osc_ab.clone()
         | osc_b_pw)
         >> (osc_b1 & osc_b2 & osc_b3);
-    let osc_b_master = osc_b_master_modulator.clone() * osc_b_level * master_adsr.clone();
+    let osc_b_master = osc_b_master_modulator.clone() * osc_b_level;
 
     // Poly mod
     let adsr_mod_freq_a =
@@ -63,21 +64,21 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
 
     let osc_a_pitch_shift = params.cc_to_detune_with_default("osc_a_pitch_shift", state, 5.0);
     let osc_a_master = ((state.bent_pitch() * osc_a_pitch_shift) * b_mod_a_pitch | osc_a_pw)
-        >> (osc_a1 & osc_a2 & osc_a3) * osc_a_level * master_adsr;
+        >> (osc_a1 & osc_a2 & osc_a3) * osc_a_level;
 
     // filter
     let filter_cutoff = params.sound_cc_or_default("filter_cutoff", state) * 20_000.0;
     let filter_q = params.sound_cc_or_default("filter_q", state);
     let b_mod_filter_cutoff = osc_b_master_modulator * osc_b_to_filter_amount;
-    let filter_env_amount = params.cc_to_detune_with_default("filter_env_amount", state, 5.0);
+    let filter_env_amount = params.sound_cc_or_default("filter_env_amount", state);
     let master_filter = (pass()
         | filter_cutoff
-            + ((b_mod_filter_cutoff * mod_adsr * filter_env_amount) * 8_000.0)
-            + (lfo_filter * 8_000.0)
+            + (b_mod_filter_cutoff * 5_000.0)
+            + (to_net(mod_adsr) * filter_env_amount * 5_000.0)
+            + (lfo_filter * 5_000.0)
         | filter_q)
         >> prophet_lowpass_filter();
 
-    let synth = (osc_a_master + osc_b_master) >> master_filter;
-
-    todo!("still incomplete")
+    let synth = Box::new((osc_a_master + osc_b_master) >> master_filter);
+    state.assemble_pitched_sound(synth, params.boxed_cc_adsr(master_adsr, state))
 }
