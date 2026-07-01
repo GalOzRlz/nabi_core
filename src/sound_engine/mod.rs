@@ -1,4 +1,3 @@
-mod common;
 mod dx7;
 mod instruments;
 mod karplus_strong;

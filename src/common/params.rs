@@ -4,16 +4,16 @@ use crate::common::envelopes::CcADSR;
 use crate::common::helpers::{
     quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
 };
-use crate::common::modulators::smooth_random_lfo;
+use crate::common::modulators::{detune_map, smooth_random_lfo};
 use crate::common::params::LFO::{Noise, Osc, SampleAndHold, SmoothNoise};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
 use anyhow::anyhow;
-use fundsp::audionode::Pipe;
+use fundsp::audionode::{FrameMulScalar, Pipe, Unop};
 use fundsp::follow::Follow;
 use fundsp::numeric_array::ArrayLength;
 use fundsp::prelude64::{
-    An, AudioUnit, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live, hammond, hold,
-    join, lorenz, organ, pass, poly_saw, poly_square, pulse, sine, triangle,
+    An, AudioUnit, FrameAddScalar, U0, U1, U2, Unit, Var, Wave, WaveSynth, Wavetable, adsr_live,
+    hammond, hold, join, lorenz, organ, pass, poly_saw, poly_square, pulse, sine, triangle,
 };
 use fundsp::prelude64::{brown, pink, white};
 use std::borrow::Cow;
@@ -401,6 +401,28 @@ impl Parameterized {
             .get_non_cc_param(name)
             .map_err(|_| anyhow::anyhow!("parameter not found"))?;
         param.value.as_noise_type().map_err(|e| anyhow::anyhow!(e))
+    }
+
+    /// turns 0.0-1.0 node to -semitone-ration to +semitone-ratio node.
+    pub fn cc_to_detune_with_default(
+        &self,
+        name: &str,
+        state: &SharedMidiState,
+        semitones: f32,
+    ) -> An<
+        Pipe<
+            Unop<
+                Unop<Pipe<Var, Follow<f64>>, FrameMulScalar<fundsp::typenum::U1>>,
+                FrameAddScalar<U1>,
+            >,
+            Unit<U1, U1>,
+        >,
+    > {
+        ((self.sound_cc_or_map(name, state, |x| {
+            (((x.value.as_f32().unwrap() / semitones) + 1.0) / 2.0)
+        }) * 2.0)
+            - 1.0)
+            >> detune_map(semitones)
     }
 }
 

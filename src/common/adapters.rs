@@ -1,4 +1,3 @@
-use fastrand::usize;
 use fundsp::audionode::AudioNode;
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;

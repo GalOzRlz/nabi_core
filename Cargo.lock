@@ -1102,7 +1102,6 @@ dependencies = [
  "cpal",
  "crossbeam-queue",
  "crossbeam-utils",
- "fastrand",
  "float_eq",
  "fundsp",
  "globwalk",
