@@ -64,6 +64,7 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     }
     .connect_operators(base_pitch2.clone());
 
+    // todo: add env control over moog style filter with same adsr?
     let morph1 = base_pitch1 >> osc1_a * (constant(1.0) - balance1_cc.clone())
         & osc1_b * balance1_cc.clone();
     let morph2 =

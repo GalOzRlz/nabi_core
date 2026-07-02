@@ -5,13 +5,11 @@ use fundsp::feedback::Feedback;
 use fundsp::prelude64::{Net, U1, Unit, feedback, tap, unit};
 
 fn cc_controlled_delay(
-    min_delay: f32,
-    max_delay: f32,
     feedback_cc: Net,
     audio_net: Net,
     delay_time: CcNode,
 ) -> An<Feedback<U1, Unit<U1, U1>, FrameId<U1>>> {
-    let delay_line = (audio_net | delay_time) >> tap(min_delay, max_delay) * feedback_cc;
+    let delay_line = (audio_net | delay_time) >> tap(0.01, 5.0) * feedback_cc;
     let db = unit::<U1, U1>(Box::new(delay_line));
     feedback(db)
 }

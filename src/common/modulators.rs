@@ -19,7 +19,7 @@ fn handle_bipolar(lfo: Net, change_to_unipolar: bool) -> Net {
 }
 
 fn to_unipolar(lfo: Net) -> Net {
-    lfo * 0.5 + 0.5
+    (lfo * 0.5) + 0.5
 }
 
 /// Accepts a raw oscillator function and return an lfo function that accepts frequency, phase and unipolar (true/false) settings

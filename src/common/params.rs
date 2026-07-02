@@ -418,6 +418,11 @@ impl Parameterized {
             Unit<U1, U1>,
         >,
     > {
+        match &self.get_cc_param(name).unwrap().value {
+            ParamType::MinusOneToOneFloat(_) => {}
+            _ => panic!("can only use minus one to one for detuning!"),
+        };
+
         ((self.sound_cc_or_map(name, state, |x| {
             (((x.value.as_f32().unwrap() / semitones) + 1.0) / 2.0)
         }) * 2.0)

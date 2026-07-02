@@ -81,4 +81,5 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
 
     let synth = Box::new((osc_a_master + osc_b_master) >> master_filter);
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(master_adsr, state))
+    // todo: make the osc_b > pitch_a into AM modulation instead! we got fm already in morph2 so it can be more interesting to have am...
 }
