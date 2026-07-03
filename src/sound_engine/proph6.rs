@@ -4,7 +4,8 @@ use crate::common::fundsp::to_net;
 use crate::common::params::{LFO, ParamNode, Parameterized};
 use crate::effects::eqs::prophet_lowpass_filter;
 use fundsp::audiounit::AudioUnit;
-use fundsp::prelude64::pass;
+use fundsp::math::semitone_ratio;
+use fundsp::prelude64::{dc, pass};
 use std::str::FromStr;
 
 pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
@@ -33,6 +34,7 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let lfo_osc_ab = params.sound_cc_or_default("lfo_osc_mod_depth", state) * lfo_node.clone();
     let lfo_filter = params.sound_cc_or_default("lfo_filter_mod_depth", state) * lfo_node.clone();
     let lfo_pw = params.sound_cc_or_default("lfo_pw_mod_depth", state) * lfo_node;
+    let lfo_osc_pitch_ab = lfo_osc_ab * semitone_ratio(5.0);
 
     // osc B
     let osc_b1 = params.get_node_type("osc_b1").unwrap().get_pwm_node();
@@ -42,18 +44,17 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_b_pw = params.sound_cc_or_default("osc_b_pw", state) * lfo_pw.clone();
 
     let osc_b_pitch_shift = params.cc_to_detune_with_default("osc_b_pitch_shift", state, 5.0);
-    let osc_b_master_modulator = ((state.bent_pitch() * osc_b_pitch_shift) * lfo_osc_ab.clone()
-        | osc_b_pw)
-        >> (osc_b1 & osc_b2 & osc_b3);
-    let osc_b_master = osc_b_master_modulator.clone() * osc_b_level;
+    let osc_b_master_modulator =
+        ((state.bent_pitch() * osc_b_pitch_shift) + lfo_osc_pitch_ab.clone() | osc_b_pw)
+            >> (osc_b1 & osc_b2 & osc_b3);
+    let osc_b_master = osc_b_master_modulator.clone() * osc_b_level + lfo_osc_pitch_ab.clone();
 
     // Poly mod
     let adsr_mod_freq_a =
         params.cc_to_detune_with_default("adsr_mod_freq_a", state, 5.0) * mod_adsr.clone();
-    let osc_b_to_freq_a = params.sound_cc_or_default("osc_b_to_freq_a", state);
+    let osc_b_to_a_am = params.sound_cc_or_default("osc_b_to_a_am", state);
     let osc_b_to_filter_amount = params.sound_cc_or_default("osc_b_to_filter_amount", state);
-    let b_mod_a_pitch =
-        (osc_b_master_modulator.clone() * osc_b_to_freq_a) * adsr_mod_freq_a * lfo_osc_ab;
+    let b_mod_a_amplitude = (osc_b_master_modulator.clone() * osc_b_to_a_am);
 
     // osc A
     let osc_a1 = params.get_node_type("osc_a1").unwrap().get_node();
@@ -63,8 +64,11 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_a_pw = params.sound_cc_or_default("osc_a_pw", state) * lfo_pw;
 
     let osc_a_pitch_shift = params.cc_to_detune_with_default("osc_a_pitch_shift", state, 5.0);
-    let osc_a_master = ((state.bent_pitch() * osc_a_pitch_shift) * b_mod_a_pitch | osc_a_pw)
-        >> (osc_a1 & osc_a2 & osc_a3) * osc_a_level;
+    let osc_a_master = ((state.bent_pitch() * osc_a_pitch_shift)
+        + (to_net(adsr_mod_freq_a) * dc(semitone_ratio(5.0)))
+        + lfo_osc_pitch_ab
+        | osc_a_pw)
+        >> (osc_a1 & osc_a2 & osc_a3) * osc_a_level * b_mod_a_amplitude;
 
     // filter
     let filter_cutoff = params.sound_cc_or_default("filter_cutoff", state) * 20_000.0;
