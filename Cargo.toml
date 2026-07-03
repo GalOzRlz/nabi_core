@@ -33,6 +33,7 @@ globwalk = "0.9.1"
 petname = "3.0.0"
 core_affinity2 = "0.15.4"
 nix = "0.31.3"
+fundx7 = { git = "https://github.com/GalOzRlz/fundx7", branch = "impl_audionode" }
 
 [features]
 profile-callback = []
