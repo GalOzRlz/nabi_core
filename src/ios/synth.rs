@@ -666,12 +666,12 @@ impl<const N: usize> VoiceManager<N> {
         next
     }
 
-    fn on(&mut self, pitch: u8, velocity: u8) {
+    fn on(&mut self, note: u8, velocity: u8) {
         self.master_volume.set_value(0.2);
         let selected = self.find_next_state();
-        self.states[selected].note_on(pitch, velocity);
-        self.pitch2state[pitch as usize] = Some(selected);
-        self.recent_pitches[selected] = Some(pitch);
+        self.states[selected].note_on(note as f32, velocity);
+        self.pitch2state[note as usize] = Some(selected);
+        self.recent_pitches[selected] = Some(note);
         println!("recent pitches: {:?}", self.recent_pitches);
     }
 

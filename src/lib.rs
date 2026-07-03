@@ -71,6 +71,7 @@ pub struct SharedMidiState {
     pitch: Shared,
     velocity: Shared,
     gate: Shared,
+    midi_note: Shared,
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
     sound_cc_vals: SharedArray,
@@ -85,6 +86,7 @@ impl Default for SharedMidiState {
             pitch: Default::default(),
             velocity: Default::default(),
             gate: shared(GATE_OFF),
+            midi_note: Default::default(),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             sound_cc_vals: core::array::from_fn(|_| Shared::new(0.0)),
@@ -102,6 +104,7 @@ impl Debug for SharedMidiState {
             .field("velocity", &self.velocity.value())
             .field("control", &self.gate.value())
             .field("pitch_bend", &self.pitch_bend.value())
+            .field("midi_note", &self.midi_note.value())
             .finish()
     }
 }
@@ -180,6 +183,11 @@ impl SharedMidiState {
         Net::wrap(Box::new(var(&self.pitch_bend) * var(&self.pitch)))
     }
 
+    /// Returns the most recent `Note On` Midi note (unmodified by bending or tuning).
+    pub fn note(&self) -> Net {
+        Net::wrap(Box::new(var(&self.midi_note)))
+    }
+
     /// Returns `GATE_ON` if `Note On` is the most recent event for this pitch, and `GATE_OFF` otherwise.
     pub fn gate_var(&self) -> An<Var> {
         var(&self.gate)
@@ -227,11 +235,12 @@ impl SharedMidiState {
     }
 
     /// Encodes a MIDI `Note On` event as a positive gate signal
-    pub fn note_on(&self, pitch: u8, velocity: u8) {
-        self.pitch.set_value((self.midi_to_hz)(pitch as f32));
+    pub fn note_on(&self, note: f32, velocity: u8) {
+        self.pitch.set_value((self.midi_to_hz)(note));
         self.velocity
             .set_value(velocity as f32 / MAX_MIDI_VALUE as f32);
         self.gate.set_value(GATE_ON);
+        self.midi_note.set_value(note)
     }
 
     /// Encodes a MIDI `Note Off` event.
@@ -335,7 +344,7 @@ impl SoundTestResult {
         sound.set_sample_rate(SAMPLE_RATE);
         let mut next_value = move || sound.get_mono();
         let start = Instant::now();
-        state.note_on(60, 127);
+        state.note_on(60.0, 127);
         while start.elapsed().as_secs_f64() < DURATION {
             result.add_value(next_value());
             std::thread::sleep(Duration::from_secs_f64(SLEEP_TIME));
