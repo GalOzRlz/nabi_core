@@ -167,7 +167,7 @@ where
                     Box::new((self.inner)(self.params_post_cooldown)),
                 );
                 self.params_state = self.params_temp_cooldown;
-                eprintln!("changed value!!!");
+                eprintln!("changed value for adapter <{}, {}>", N, M);
             } else {
                 self.process_cooldown_counter += 1
             }

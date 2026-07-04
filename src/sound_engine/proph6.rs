@@ -1,6 +1,7 @@
 use crate::SharedMidiState;
 use crate::common::envelopes::assemble_cc_adsr;
 use crate::common::fundsp::to_net;
+use crate::common::modulators::to_unipolar;
 use crate::common::params::{CcParam, LFO, NonCcParam, ParamNode, ParamType, Parameterized};
 use crate::effects::eqs::prophet_lowpass_filter;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
@@ -34,12 +35,14 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let lfo_node = lfo_freq >> LFO::from_str(lfo_string.as_str()).unwrap().get_node();
 
     // LFO Destinations
-    let lfo_osc_ab = params.sound_cc_or_default("lfo_pitch_mod_depth", state) * lfo_node.clone();
+    let lfo_osc_ab = params.sound_cc_or_default("lfo_pitch_mod_depth", state)
+        * lfo_node.clone()
+        * semitone_ratio(24.0);
     let lfo_filter =
         params.sound_cc_or_default("lfo_filter_mod_depth", state) * lfo_node.clone() * 5_000.0;
-    let lfo_pw = params.sound_cc_or_default("lfo_pw_mod_depth", state) * lfo_node;
-
-    let lfo_osc_pitch_ab = lfo_osc_ab * semitone_ratio(24.0);
+    let lfo_pw = to_unipolar(to_net(
+        params.sound_cc_or_default("lfo_pw_mod_depth", state) * lfo_node,
+    ));
 
     // osc B
     let osc_b1 = params.get_node_type("osc_b1").unwrap().get_pwm_node();
@@ -49,9 +52,13 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let osc_b_pw = params.sound_cc_or_default("osc_b_pw", state); //+ (lfo_pw.clone() * 0.5);
 
     let osc_b_pitch_shift = params.cc_to_detune_with_default("osc_b_pitch_shift", state, 5.0);
-    let osc_b_master_modulator =
-        ((state.bent_pitch() * osc_b_pitch_shift) * lfo_osc_pitch_ab.clone() | osc_b_pw)
-            >> (osc_b1 & osc_b2 & osc_b3);
+    // let osc_b_master_modulator =
+    //     ((state.bent_pitch() * osc_b_pitch_shift) * lfo_osc_pitch_ab.clone() | osc_b_pw)
+    //         >> (osc_b1 & osc_b2 & osc_b3);
+    let osc_b_master_modulator = ((state.bent_pitch() * osc_b_pitch_shift)
+        + (lfo_osc_ab.clone() * state.bent_pitch())
+        | osc_b_pw * lfo_pw)
+        >> (osc_b1 & osc_b2 & osc_b3);
     let osc_b_master = (osc_b_master_modulator.clone() * osc_b_level);
 
     // Poly mod
@@ -88,7 +95,7 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
         | filter_q)
         >> prophet_lowpass_filter();
 
-    //let synth = Box::new((osc_a_master + osc_b_master) >> master_filter);
+    //let synth = Box::new((osc_a_master + osc_b_master) );
     let synth = Box::new(osc_b_master >> master_filter);
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(master_adsr, state))
 }
@@ -160,7 +167,7 @@ static PROPH6: SoundFactory = SoundFactory {
                 description: Some("rate of LFO in hrz"),
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.001),
+                value: ParamType::ZeroOneFloat(0.0),
                 cc_norm_index: 0,
                 name: "lfo_pitch_mod_depth",
                 description: Some(
@@ -182,13 +189,13 @@ static PROPH6: SoundFactory = SoundFactory {
                 ),
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(0.7),
+                value: ParamType::ZeroOneFloat(0.9),
                 cc_norm_index: 0,
                 name: "osc_b_level",
                 description: Some("0.0 to 1.0 level for oscillator B"),
             },
             CcParam {
-                value: ParamType::ZeroOneFloat(1.0),
+                value: ParamType::ZeroOneFloat(0.8),
                 cc_norm_index: 0,
                 name: "osc_b_pw",
                 description: Some("0.0 to 1.0 pules width value for oscillator B"),

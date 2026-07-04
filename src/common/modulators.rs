@@ -3,29 +3,14 @@ use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
 use fundsp::Frame;
 use fundsp::audionode::Map;
-use fundsp::audiounit::AudioUnit;
 use fundsp::audiounit::Unit;
 use fundsp::funutd::math::Float;
 use fundsp::math::{SegmentInterpolator, ease_noise, spline_noise};
-use fundsp::prelude64::{An, Net, U0, U1, U2, follow, lfo, map, semitone_ratio, sine_hz, unit};
+use fundsp::prelude64::{An, Net, U1, U2, follow, lfo, map, semitone_ratio, unit};
 use std::sync::Arc;
 
-fn handle_bipolar(lfo: Net, change_to_unipolar: bool) -> Net {
-    if change_to_unipolar {
-        to_unipolar(lfo)
-    } else {
-        lfo
-    }
-}
-
-fn to_unipolar(lfo: Net) -> Net {
+pub(crate) fn to_unipolar(lfo: Net) -> Net {
     (lfo * 0.5) + 0.5
-}
-
-/// Accepts a raw oscillator function and return an lfo function that accepts frequency, phase and unipolar (true/false) settings
-pub fn lfo_builder(osc: Box<dyn AudioUnit>, to_unipolar: bool) -> Net {
-    let osc = to_net(unit::<U0, U1>(osc));
-    handle_bipolar(osc, to_unipolar)
 }
 
 pub fn smooth_random_lfo_freq(freq: f32) -> Net {
@@ -53,16 +38,11 @@ pub fn smooth_noise_constructor<T: Float + fundsp::Float>(
     to_net(node)
 }
 
-fn sine_lfo(freq: f32, phase: f32, unipolar: bool) -> Net {
-    let raw = to_net(sine_hz(freq).phase(phase));
-    handle_bipolar(raw, unipolar)
-}
-
 /// Generic mapping for cc values (0.0-1.0) resulting in frequency ratios matching the desired detuning.
 /// Used as a multiplier with a base frequency.
 pub fn detune_map(semitone: f32) -> An<Unit<U1, U1>> {
     let mapping = Box::new(map(move |i: &Frame<f32, U1>| {
-        let semitones = -semitone + 2.0 * semitone * i[0];
+        let semitones = (-semitone + (2.0 * semitone) * i[0]);
         semitone_ratio(semitones)
     }));
     to_mono_unit(mapping)
