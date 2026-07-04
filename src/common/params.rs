@@ -43,14 +43,14 @@ impl FromStr for LFO {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<LFO, &'static str> {
         let lower = s.to_lowercase();
-        if let Some(osc) = OscillatorType::from_str(&lower).ok() {
-            Ok(Osc(osc))
-        } else if let Some(noise) = NoiseType::from_str(&lower).ok() {
+        if let Some(noise) = NoiseType::from_str(&lower).ok() {
             Ok(Noise(noise))
         } else if lower.contains("smooth") {
             Ok(SmoothNoise(smooth_random_lfo()))
         } else if lower.contains("sample") || lower.contains("sh") {
             Ok(SampleAndHold)
+        } else if let Some(osc) = OscillatorType::from_str(&lower).ok() {
+            Ok(Osc(osc))
         } else {
             Err("could not find proper lfo shape from value!")
         }
@@ -532,7 +532,15 @@ pub enum OscillatorType {
 impl FromStr for OscillatorType {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let lower = s.to_lowercase();
+        let cleaned = s.trim().trim_matches('"');
+        let lower = cleaned.to_lowercase();
+        println!("parsing oscillator type: {}", &lower);
+        println!(
+            "parsing: '{}', len={}, bytes={:?}",
+            lower,
+            lower.len(),
+            lower.as_bytes()
+        );
         match lower.as_str() {
             "saw" => Ok(OscillatorType::Saw),
             "triangle" => Ok(OscillatorType::Triangle),
@@ -557,11 +565,13 @@ fn osc_string_to_cow(s: &str) -> Cow<'static, str> {
         "pulse" => Cow::Borrowed("pulse"),
         "square" => Cow::Borrowed("square"),
         "none" => Cow::Borrowed("none"),
-        // Any other string (file path, custom name) – take ownership
-        other => Cow::Owned(other.to_string()),
+        "lorenz" => Cow::Borrowed("lorenz"),
+        "hammond" => Cow::Borrowed("hammond"),
+        "organ_wave" | "organ" => Cow::Borrowed("organ"),
+        // Any other string – take ownership of the original (case preserved)
+        _ => Cow::Owned(s.to_string()),
     }
 }
-
 impl ParamNode<U1, U1> for OscillatorType {
     fn get_node(self) -> An<Unit<U1, U1>> {
         to_mono_unit(self.to_audiounit())
@@ -587,7 +597,11 @@ impl OscillatorType {
     fn wavetable_synth_from_path(path: &PathBuf) -> Box<An<WaveSynth<U1>>> {
         let mut wav_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         wav_path.push(path);
-        let wave = Wave::load(wav_path).expect("Failed to load WAV file for wavetable synth!");
+        let error_string = format!(
+            "Failed to load WAV file for wavetable synth! {:?}",
+            wav_path
+        );
+        let wave = Wave::load(wav_path).expect(&error_string);
         let wavetable = Wavetable::from_wave(20.0, 20000.0, 12.0, wave.channel(0));
         let synth = WaveSynth::new(Arc::new(wavetable));
         Box::new(An(synth))

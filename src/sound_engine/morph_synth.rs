@@ -27,10 +27,10 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
     let cc_adsr = assemble_cc_adsr(a, d, s, r);
 
-    let osc1_a = params.get_node_type("osc1_a").unwrap().get_node();
-    let osc1_b = params.get_node_type("osc1_b").unwrap().get_node();
-    let osc2_a = params.get_node_type("osc2_a").unwrap().get_node();
-    let osc2_b = params.get_node_type("osc2_b").unwrap().get_node();
+    let osc_a1 = params.get_node_type("osc_a1").unwrap().get_node();
+    let osc_a2 = params.get_node_type("osc_a2").unwrap().get_node();
+    let osc_b1 = params.get_node_type("osc_b1").unwrap().get_node();
+    let osc_b2 = params.get_node_type("osc_b2").unwrap().get_node();
 
     let detune1 = params.sound_cc_or_default("detune1", state) >> detune_map_semitone();
     let detune2 = params.sound_cc_or_default("detune2", state) >> detune_map_semitone();
@@ -48,27 +48,27 @@ pub fn morph2(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let balance2_cc = params.sound_cc_or_default("balance_2", state);
 
     // The B oscillators are modulated by the A oscillators
-    let osc1_b = FmConnector {
-        modulator: osc1_a.clone(),
-        carrier: osc1_b,
+    let osc_a2 = FmConnector {
+        modulator: osc_a1.clone(),
+        carrier: osc_a2,
         ratio: to_net(fm_ratio_an.clone()),
         amount: to_net(fm_amount_1),
     }
     .connect_operators(base_pitch1.clone());
 
-    let osc2_b = FmConnector {
-        modulator: osc2_a.clone(),
-        carrier: osc2_b,
+    let osc_b2 = FmConnector {
+        modulator: osc_b1.clone(),
+        carrier: osc_b2,
         ratio: to_net(fm_ratio_an),
         amount: to_net(fm_amount_2),
     }
     .connect_operators(base_pitch2.clone());
 
     // todo: add env control over moog style filter with same adsr?
-    let morph1 = base_pitch1 >> osc1_a * (constant(1.0) - balance1_cc.clone())
-        & osc1_b * balance1_cc.clone();
+    let morph1 = base_pitch1 >> osc_a1 * (constant(1.0) - balance1_cc.clone())
+        & osc_a2 * balance1_cc.clone();
     let morph2 =
-        base_pitch2 >> osc2_a * (constant(1.0) - balance2_cc.clone()) & osc2_b * balance2_cc;
+        base_pitch2 >> osc_b1 * (constant(1.0) - balance2_cc.clone()) & osc_b2 * balance2_cc;
     let synth = Box::new(morph1 + morph2);
     state.assemble_pitched_sound(synth, params.boxed_cc_adsr(cc_adsr, state))
 }
@@ -84,7 +84,7 @@ static MORPH2: SoundFactory = SoundFactory {
                 cc_norm_index: 1,
                 name: "balance_1",
                 description: Some(
-                    "The morphing depth of Oscillator1: moves between osc1_a and osc1_b",
+                    "The morphing depth of Oscillator1: moves between osc_a1 and osc_a2",
                 ),
             },
             CcParam {
@@ -151,22 +151,22 @@ static MORPH2: SoundFactory = SoundFactory {
         non_cc_params: Some(Cow::Borrowed(&[
             NonCcParam {
                 value: ParamType::Oscillator(Cow::Borrowed("triangle")),
-                name: "osc1_a",
+                name: "osc_a1",
                 description: None,
             },
             NonCcParam {
                 value: ParamType::Oscillator(Cow::Borrowed("square")),
-                name: "osc1_b",
+                name: "osc_a2",
                 description: None,
             },
             NonCcParam {
                 value: ParamType::Oscillator(Cow::Borrowed("organ")),
-                name: "osc2_a",
+                name: "osc_b1",
                 description: None,
             },
             NonCcParam {
                 value: ParamType::Oscillator(Cow::Borrowed("saw")),
-                name: "osc2_b",
+                name: "osc_b2",
                 description: None,
             },
         ])),

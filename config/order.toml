@@ -1,4 +1,5 @@
 patch_order = [
+    "proph6 test",
     "Super Triangle",
     "morph2 A",
     "Agibbonprawn",
