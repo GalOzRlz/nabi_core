@@ -9,6 +9,7 @@ use fundsp::math::{SegmentInterpolator, ease_noise, spline_noise};
 use fundsp::prelude64::{An, Net, U1, U2, follow, lfo, map, semitone_ratio, unit};
 use std::sync::Arc;
 
+/// Turn -1.0 to 1.0 stream into 0.0 to 1.0
 pub(crate) fn to_unipolar(lfo: Net) -> Net {
     (lfo * 0.5) + 0.5
 }

@@ -142,7 +142,7 @@ impl ParamType {
             ParamType::ZeroTenFloat(v) => Ok((v.clamp(0.0, 10.0) / 10.0)),
             ParamType::Noise(_) => Err(anyhow!("ParamType::Noise has no numeric value!")),
             ParamType::String(_) => Err(anyhow!("ParamType::String has no numeric value!")),
-            ParamType::MinusOneToOneFloat(v) => Ok(((v / 2.0) + 1.0).clamp(0.0, 1.0)),
+            ParamType::MinusOneToOneFloat(v) => Ok(((v + 1.0) * 0.5).clamp(0.0, 1.0)),
         }
     }
 
@@ -403,31 +403,14 @@ impl Parameterized {
         param.value.as_noise_type().map_err(|e| anyhow::anyhow!(e))
     }
 
-    /// turns 0.0-1.0 node to -semitone-ration to +semitone-ratio node.
+    /// turns 0.0-1.0 node to -semitone-ration to +semitone-ratio node where 0.5 is zero detune.
     pub fn cc_to_detune_with_default(
         &self,
         name: &str,
         state: &SharedMidiState,
         semitones: f32,
-    ) -> An<
-        Pipe<
-            Unop<
-                Unop<Pipe<Var, Follow<f64>>, FrameMulScalar<fundsp::typenum::U1>>,
-                FrameAddScalar<U1>,
-            >,
-            Unit<U1, U1>,
-        >,
-    > {
-        match &self.get_cc_param(name).unwrap().value {
-            ParamType::MinusOneToOneFloat(_) => {}
-            _ => panic!("can only use minus one to one for detuning!"),
-        };
-
-        ((self.sound_cc_or_map(name, state, |x| {
-            (((x.value.as_f32().unwrap() / semitones) + 1.0) / 2.0)
-        }) * 2.0)
-            - 1.0)
-            >> detune_map(semitones)
+    ) -> An<Pipe<Pipe<Var, Follow<f64>>, Unit<U1, U1>>> {
+        self.sound_cc_or_default(name, state) >> detune_map(semitones)
     }
 }
 
@@ -534,13 +517,6 @@ impl FromStr for OscillatorType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let cleaned = s.trim().trim_matches('"');
         let lower = cleaned.to_lowercase();
-        println!("parsing oscillator type: {}", &lower);
-        println!(
-            "parsing: '{}', len={}, bytes={:?}",
-            lower,
-            lower.len(),
-            lower.as_bytes()
-        );
         match lower.as_str() {
             "saw" => Ok(OscillatorType::Saw),
             "triangle" => Ok(OscillatorType::Triangle),
@@ -663,4 +639,11 @@ impl FromStr for NoiseType {
             _ => Err("Unrecognized noise type"),
         }
     }
+}
+
+/// Takes in a 0.0 to 1.0 cc node stream and makes it into -1 to 1
+pub fn cc_node_to_minus_one(
+    node: CcNode,
+) -> An<Unop<Unop<Pipe<Var, Follow<f64>>, FrameAddScalar<U1>>, FrameMulScalar<U1>>> {
+    (node - 0.5) * 2.0
 }

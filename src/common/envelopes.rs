@@ -71,9 +71,12 @@ pub fn cc_controlled_adsr() -> An<StaticParamsAudioNodeAdapter<5, 1>> {
 }
 
 pub fn cc_controlled_attack_decay() -> An<StaticParamsAudioNodeAdapter<3, 1>> {
-    An(StaticParamsAudioNodeAdapter::<3, 1>::new(Arc::new(
+    let mut adsr = An(StaticParamsAudioNodeAdapter::<3, 1>::new(Arc::new(
         |args: [f32; 3]| to_net(adsr_live(args[1], args[2], 0.0, 0.0)),
-    )))
+    )));
+    adsr.rebuild_on_condition(|x| x[0] == GATE_OFF);
+    adsr.disable_fadeout();
+    adsr
 }
 
 pub fn assemble_cc_adsr(a: CcNode, d: CcNode, s: CcNode, r: CcNode) -> CcADSR {
