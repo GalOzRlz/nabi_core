@@ -95,8 +95,8 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
         cc_node_to_minus_one(params.sound_cc_or_default("filter_env_amount", state));
     let master_filter = (pass()
         | filter_cutoff
-            + (b_mod_filter_cutoff * 10_000.0)
-            + to_net(mod_adsr) * (filter_env_amount * 10_000.0)
+            + (b_mod_filter_cutoff * 15_000.0)
+            + to_net(mod_adsr) * (filter_env_amount * 15_000.0)
             + lfo_filter
         | filter_q)
         >> prophet_lowpass_filter();
