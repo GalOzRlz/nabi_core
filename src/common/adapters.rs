@@ -12,11 +12,11 @@ type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>
 type RebuildChangeFn<const N: usize> = dyn Fn([f32; N], [f32; N]) -> bool + Send + Sync;
 type RebuildConditionFn<const N: usize> = dyn Fn([f32; N]) -> bool + Send + Sync;
 
-/// Generic wrapper for M-inputs M-outputs Nets (where first 0..<M inputs are mapped for the tick() function) which have only f32 params in their signature.
+/// Generic wrapper to create a Net with N-total-inputs, M-processed inputs and U1/U2/.. outputs. This is used for functions which have only f32 params in their signature.
 /// A convenience closure that assembles the net from an array of N ( M audio outputs + static parameters)
 /// is provided - which can then be changed via Net::pipe (usually for CC control of static parameters).
 /// This allows for modulation of otherwise static parameters on the fly - with the net being rebuilt only when needed (with cooldowning).
-/// By convention [0..<M] of the inputs are reserved for audio and the rest of N will be the params, in the order in which the closure expects.
+/// [0..<M] of the inputs are reserved for processing and the rest of N will be the static params, in the order in which the closure expects.
 ///
 /// M = 1 means mono Net,
 /// M = 2 means stereo Net, etc.
@@ -36,12 +36,10 @@ type RebuildConditionFn<const N: usize> = dyn Fn([f32; N]) -> bool + Send + Sync
 /// ( pass() | pass() | cc_1 | cc_2 |cc_3 ) >> reverb_adapter
 /// ```
 #[derive(Clone)]
-pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize>
+pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize, I: Size<f32>>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
-    Const<M>: ToUInt,
-    U<M>: Size<f32>,
 {
     inner: GenericNetFunc<N>,
     net: Net,
@@ -56,21 +54,19 @@ where
     rebuild_condition_func: Option<Arc<RebuildConditionFn<N>>>,
     rebuild_change_func: Option<Arc<RebuildChangeFn<N>>>,
     init_checker: bool,
-    output_buffer: GenericArray<f32, U<M>>,
+    output_buffer: GenericArray<f32, I>,
     detection_lowest_value: usize,
 }
 
-impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M>
+impl<const N: usize, const M: usize, I: Size<f32>> StaticParamsAudioNodeAdapter<N, M, I>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
-    Const<M>: ToUInt,
-    U<M>: Size<f32>,
 {
     pub(crate) fn new(inner: GenericNetFunc<N>) -> Self {
         assert!(
             N >= M,
-            "number of total inputs cannot be lower than the the number of outputs!"
+            "number of total inputs cannot be lower than the the number processed inputs"
         );
         let detection_lowest_value = { if M == 1 { 0 } else { M } };
 
@@ -176,16 +172,15 @@ where
     }
 }
 
-impl<const N: usize, const M: usize> AudioNode for StaticParamsAudioNodeAdapter<N, M>
+impl<const N: usize, const M: usize, I: Size<f32>> AudioNode
+    for StaticParamsAudioNodeAdapter<N, M, I>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
-    Const<M>: ToUInt,
-    U<M>: Size<f32>,
 {
     const ID: u64 = 60000 + N as u64 + M as u64;
     type Inputs = U<N>;
-    type Outputs = U<M>;
+    type Outputs = I;
 
     fn reset(&mut self) {
         self.net.reset();
