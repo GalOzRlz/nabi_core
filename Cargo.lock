@@ -597,7 +597,7 @@ dependencies = [
 [[package]]
 name = "fundx7"
 version = "0.0.4"
-source = "git+https://github.com/GalOzRlz/fundx7?branch=impl_audionode#6119e0d445df69f1e328d0fad05b29aff8143e30"
+source = "git+https://github.com/GalOzRlz/fundx7#f923ae24d15c35b0dafbc140e2e64c9f62a83601"
 dependencies = [
  "fundsp",
 ]
