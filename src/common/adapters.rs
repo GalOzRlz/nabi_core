@@ -23,16 +23,21 @@ type RebuildConditionFn<const N: usize> = dyn Fn([f32; N]) -> bool + Send + Sync
 /// N signifies the total number of inputs via pipe (>>) while M is the output arity (1 = U1, etc.)
 /// ### Example
 /// ```
-/// let reverb_builder = StaticParamsAudioNodeAdapter::<5, 2>::new(Arc::new(
-///  |args: [f32; 5]| {
-/// /// args[0], args[1] are audio (ignored here, but still passed through - N being the target input count)
-/// reverb_stereo(args[2], args[3], args[4])
+/// use nabi_core::common::adapters::StaticParamsAudioNodeAdapter;
+/// use fundsp::prelude64::*;
+/// use std::sync::Arc;
+/// fn cc_reverb() ->An<Pipe<Stack<Stack<Stack<Stack<Pass, Pass>, Pass>, Pass>, Pass>, StaticParamsAudioNodeAdapter<5, 2>>> {
+///     let reverb_builder = StaticParamsAudioNodeAdapter::<5, 2>::new(Arc::new(
+///         |args: [f32; 5]| {
+///         // args[0], args[1] are audio (ignored here, but still passed through - N being the target input count)
+///         Net::wrap(Box::new(reverb_stereo(args[2], args[3], args[4])))
+///     }
+///     ));
+///     // 5 total inputs with 2 outputs (Stereo)
+///     let reverb_adapter = An(reverb_builder);
+///     // all inputs are now able to be piped into the wrapper!
+///     ( pass() | pass() | pass() | pass() | pass() ) >> reverb_adapter
 /// }
-/// ));
-/// // 5 total inputs with 2 outputs (Stereo)
-/// let reverb_adapter = An(StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder));
-/// /// all inputs are now piped into the wrapper!
-/// ( pass() | pass() | cc_1 | cc_2 |cc_3 ) >> reverb_adapter
 /// ```
 #[derive(Clone)]
 pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize>
@@ -66,7 +71,7 @@ where
     Const<M>: ToUInt,
     U<M>: Size<f32>,
 {
-    pub(crate) fn new(inner: GenericNetFunc<N>) -> Self {
+    pub fn new(inner: GenericNetFunc<N>) -> Self {
         assert!(
             N >= M,
             "number of total inputs cannot be lower than the the number of outputs!"

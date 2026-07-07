@@ -14,7 +14,7 @@
 //!   into `SynthFunc` functions with a variety of properties.
 //! * The `sounds` module contains `SynthFunc` functions that produce a variety of live sounds.
 
-mod common;
+pub mod common;
 pub mod config_builder;
 mod effects;
 pub mod experimental;

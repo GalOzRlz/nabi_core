@@ -32,6 +32,8 @@ globwalk = "0.9.1"
 petname = "3.0.0"
 core_affinity2 = "0.15.4"
 nix = "0.31.3"
+strum = "0.28.0"
+strum_macros = "0.28.0"
 
 [features]
 profile-callback = []

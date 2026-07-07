@@ -1,4 +1,4 @@
-pub(crate) mod adapters;
+pub mod adapters;
 pub mod cc;
 pub(crate) mod envelopes;
 pub(crate) mod fm;

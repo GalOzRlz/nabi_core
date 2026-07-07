@@ -1,9 +1,7 @@
 use crate::SharedMidiState;
 use crate::common::adapters::StaticParamsAudioNodeAdapter;
 use crate::common::envelopes::CcADSR;
-use crate::common::helpers::{
-    quantize_u8_to_01, stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit,
-};
+use crate::common::helpers::{stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit};
 use crate::common::modulators::{detune_map, smooth_random_lfo};
 use crate::common::params::LFO::{Noise, Osc, SampleAndHold, SmoothNoise};
 use crate::config_builder::{ConfigurableMapping, MAX_KNOBS_PER_GROUP};
@@ -21,6 +19,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 use toml::Value;
 
 pub type CcNode = An<Pipe<Var, Follow<f64>>>;
@@ -75,9 +75,8 @@ impl ParamNode<U1, U1> for LFO {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, EnumIter)]
 pub enum ParamType {
-    U8(u8),
     Oscillator(Cow<'static, str>),
     ZeroOneFloat(f32),
     ZeroTenFloat(f32),
@@ -100,14 +99,12 @@ impl ParamType {
             ParamType::ZeroTenFloat(_) => ParamType::ZeroOneFloat((v * 10.0).clamp(0.0, 10.0)),
             ParamType::ZeroOneFloat(_) => ParamType::ZeroOneFloat(v.clamp(0.0, 1.0)),
             ParamType::Float32(_) => ParamType::Float32(v * 100.0),
-            ParamType::U8(_) => ParamType::U8((v * 127.0).clamp(0.0, 127.0).round() as u8),
             ParamType::MinusOneToOneFloat(_) => ParamType::MinusOneToOneFloat((v * 2.0) - 1.0),
         }
     }
 
     pub fn to_toml_value(&self) -> Value {
         match self {
-            ParamType::U8(a) => Value::Integer(*a as i64),
             ParamType::Oscillator(a) | ParamType::Noise(a) | ParamType::String(a) => {
                 Value::String(a.to_string())
             }
@@ -134,7 +131,6 @@ impl ParamType {
 
     pub fn as_zero_to_one_f32(&self) -> Result<f32, anyhow::Error> {
         match &self {
-            ParamType::U8(v) => Ok(quantize_u8_to_01(*v)),
             ParamType::Oscillator(_) => Err(anyhow!("ParamType::Oscillator has no numeric value!")),
             ParamType::ADSR(_) => Err(anyhow!("ParamType::ADSR has no numeric value!")),
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
@@ -148,7 +144,6 @@ impl ParamType {
 
     pub fn as_f32(&self) -> Result<f32, anyhow::Error> {
         match &self {
-            ParamType::U8(v) => Ok(*v as f32),
             ParamType::Oscillator(_) => Err(anyhow!("ParamType::Oscillator has no numeric value!")),
             ParamType::ADSR(_) => Err(anyhow!("ParamType::ADSR has no numeric value!")),
             ParamType::ZeroOneFloat(v) => Ok(v.clamp(0.0, 1.0)),
@@ -184,7 +179,6 @@ impl ParamType {
 impl std::fmt::Display for ParamType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParamType::U8(v) => write!(f, "{}", v),
             ParamType::Oscillator(s) => write!(f, "{}", s),
             ParamType::ZeroOneFloat(v)
             | ParamType::Float32(v)
@@ -455,13 +449,6 @@ where
                         *v = num as f32;
                     }
                 }
-                ParamType::U8(v) => {
-                    if let Some(num) = toml_value.as_integer() {
-                        *v = num as u8;
-                    } else if let Some(num) = toml_value.as_float() {
-                        *v = num as u8;
-                    }
-                }
                 ParamType::Oscillator(s) | ParamType::Noise(s) | ParamType::String(s) => {
                     if let Some(str_val) = toml_value.as_str() {
                         *s = osc_string_to_cow(str_val);
@@ -646,4 +633,45 @@ pub fn cc_node_to_minus_one(
     node: CcNode,
 ) -> An<Unop<Unop<Pipe<Var, Follow<f64>>, FrameAddScalar<U1>>, FrameMulScalar<U1>>> {
     (node - 0.5) * 2.0
+}
+
+#[cfg(test)]
+mod param_tests {
+    use super::*;
+    #[test]
+    fn test_toml_to_cc_and_back_0s() {
+        for variant in ParamType::iter() {
+            if let Some(original) = variant.as_f32().ok() {
+                println!("variant {:?} -> {:?}", variant, original);
+                let as_cc = variant.as_zero_to_one_f32().unwrap();
+                let back = variant.cc_to_param(as_cc).as_f32().unwrap();
+                println!("cc value {:?} => {:?}", as_cc, back);
+                assert_eq!(original, back);
+            }
+        }
+    }
+
+    #[test]
+    fn test_toml_to_cc_and_back_1s() {
+        let one = 1.0f32;
+        for variant in ParamType::iter() {
+            if let Some(param) = match variant {
+                ParamType::ADSR(_)
+                | ParamType::Noise(_)
+                | ParamType::Oscillator(_)
+                | ParamType::String(_) => None,
+                ParamType::ZeroTenFloat(_) => Some(ParamType::ZeroTenFloat(one)),
+                ParamType::ZeroOneFloat(_) => Some(ParamType::ZeroOneFloat(one)),
+                ParamType::Float32(_) => Some(ParamType::Float32(1.0)),
+                ParamType::MinusOneToOneFloat(_) => Some(ParamType::MinusOneToOneFloat(one)),
+            } {
+                let original = param.as_f32().unwrap();
+                println!("variant {:?} -> {:?}", variant, original);
+                let as_cc = param.as_zero_to_one_f32().unwrap();
+                let back = param.cc_to_param(as_cc).as_f32().unwrap();
+                println!("cc value {:?} => {:?}", as_cc, back);
+                assert_eq!(original, back);
+            }
+        }
+    }
 }
