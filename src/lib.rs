@@ -184,14 +184,16 @@ impl SharedMidiState {
     }
 
     /// Returns the most recent `Note On` Midi note (unmodified by bending or tuning).
-    pub fn note(&self) -> Net {
-        Net::wrap(Box::new(var(&self.midi_note)))
+    fn note_var(&self) -> An<Var> {
+        var(&self.midi_note)
     }
 
     /// Returns `GATE_ON` if `Note On` is the most recent event for this pitch, and `GATE_OFF` otherwise.
     pub fn gate_var(&self) -> An<Var> {
         var(&self.gate)
     }
+
+    /// Returns `GATE_ON` if `Note On` is the most recent event for this pitch, and `GATE_OFF` otherwise.
 
     /// Returns the current volume.
     ///
