@@ -597,7 +597,7 @@ dependencies = [
 [[package]]
 name = "fundx7"
 version = "0.0.4"
-source = "git+https://github.com/GalOzRlz/fundx7#f923ae24d15c35b0dafbc140e2e64c9f62a83601"
+source = "git+https://github.com/GalOzRlz/fundx7?branch=fix_for_nabi#9fe7565e3ba53ccbc1308b7a636b38f2ed3515d0"
 dependencies = [
  "fundsp",
 ]

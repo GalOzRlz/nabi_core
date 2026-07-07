@@ -1,4 +1,5 @@
 use crate::SharedMidiState;
+use crate::common::envelopes::assemble_cc_adsr;
 use crate::common::params::ParamType::Float32;
 use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
@@ -11,6 +12,9 @@ use linkme::distributed_slice;
 use std::borrow::Cow;
 
 pub fn dx7_sysex(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
+    let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
+    let cc_adsr = assemble_cc_adsr(a, d, s, r);
+
     let patch_bank = std::fs::read("sysex/star1-fast-decay.syx").unwrap();
 
     let patch_bank = PatchBank::new(&patch_bank);
@@ -20,16 +24,14 @@ pub fn dx7_sysex(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         .value
         .as_f32()
         .unwrap() as usize];
-    let parameters = Parameters {
-        gate: true,
-        sustain: false,
-        velocity: 1.0,
-        note: state.midi_note.value(),
-        ..Parameters::default()
-    };
-    let fm_synth = Voice::new(my_favorite_patch, parameters, SAMPLE_RATE_CD as f32);
-    let synth = (state.note_var() | state.gate_var()) >> An(fm_synth);
-    Box::new(synth)
+
+    let fm_synth = Voice::new(
+        my_favorite_patch,
+        Parameters::default(),
+        SAMPLE_RATE_CD as f32,
+    );
+    let synth = (state.note_var() | state.gate_var()) >> An(fm_synth) * 0.4;
+    Box::new(synth * 0.5)
 }
 
 #[distributed_slice(SOUNDS)]
@@ -64,9 +66,11 @@ static SUPER_OSC: SoundFactory = SoundFactory {
             },
         ])),
         non_cc_params: Some(Cow::Borrowed(&[NonCcParam {
-            value: Float32(0.0),
+            value: Float32(7.0),
             name: "patch_num",
-            description: None,
+            description: Some(
+                "The patch number of the sound stored in the sysex file. While the library will start at 1 our indexing will start at 0.",
+            ),
         }])),
     },
 };

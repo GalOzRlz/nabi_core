@@ -36,6 +36,7 @@ nix = "0.31.3"
 
 [dependencies.fundx7]
 git = "https://github.com/GalOzRlz/fundx7"
+branch = "fix_for_nabi"
 
 [features]
 profile-callback = []
