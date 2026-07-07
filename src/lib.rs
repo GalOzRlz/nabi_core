@@ -182,6 +182,10 @@ impl SharedMidiState {
     pub fn bent_pitch(&self) -> Net {
         Net::wrap(Box::new(var(&self.pitch_bend) * var(&self.pitch)))
     }
+    /// Returns velocity value as an AudioNode.
+    fn velocity_var(&self) -> An<Var> {
+        var(&self.velocity)
+    }
 
     /// Returns the most recent `Note On` Midi note (unmodified by bending or tuning).
     fn note_var(&self) -> An<Var> {

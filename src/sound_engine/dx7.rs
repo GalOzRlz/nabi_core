@@ -30,8 +30,8 @@ pub fn dx7_sysex(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
         Parameters::default(),
         SAMPLE_RATE_CD as f32,
     );
-    let synth = (state.note_var() | state.gate_var()) >> An(fm_synth) * 0.4;
-    Box::new(synth * 0.5)
+    let synth = (state.note_var() | state.gate_var() | state.velocity_var()) >> An(fm_synth) * 0.3;
+    state.assemble_pitched_sound(Box::new(synth), params.boxed_cc_adsr(cc_adsr, state))
 }
 
 #[distributed_slice(SOUNDS)]
@@ -74,3 +74,26 @@ static SUPER_OSC: SoundFactory = SoundFactory {
         }])),
     },
 };
+
+pub fn dx7_scroller(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioUnit> {
+    let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
+    let cc_adsr = assemble_cc_adsr(a, d, s, r);
+
+    let patch_bank = std::fs::read("sysex/star1-fast-decay.syx").unwrap();
+
+    let patch_bank = PatchBank::new(&patch_bank);
+    let my_favorite_patch = patch_bank.patches[params
+        .get_non_cc_param("patch_num")
+        .unwrap()
+        .value
+        .as_f32()
+        .unwrap() as usize];
+
+    let fm_synth = Voice::new(
+        my_favorite_patch,
+        Parameters::default(),
+        SAMPLE_RATE_CD as f32,
+    );
+    let synth = (state.note_var() | state.gate_var() | state.velocity_var()) >> An(fm_synth) * 0.4;
+    state.assemble_pitched_sound(Box::new(synth), params.boxed_cc_adsr(cc_adsr, state))
+}

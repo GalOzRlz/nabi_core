@@ -1,5 +1,5 @@
 patch_order = [
-    "dx7 test",
+    "dx7",
     "Super Triangle",
     "morph2 A",
     "Agibbonprawn",
