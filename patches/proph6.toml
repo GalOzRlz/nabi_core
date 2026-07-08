@@ -1,6 +1,6 @@
 [[program]]
 function = "proph6"
-name = "proph6 test"
+name = "proph6 default"
 
 [program.effects]
 chain = [

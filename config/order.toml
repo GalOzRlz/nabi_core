@@ -1,6 +1,6 @@
 patch_order = [
-    "proph6 test",
     "Super Triangle",
+    "proph6 default",
     "morph2 A",
     "Agibbonprawn",
     "KS PlasticPipe",
