@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use toml::Value;
 
@@ -638,6 +637,7 @@ pub fn cc_node_to_minus_one(
 #[cfg(test)]
 mod param_tests {
     use super::*;
+    use strum::IntoEnumIterator;
     #[test]
     fn test_toml_to_cc_and_back_0s() {
         for variant in ParamType::iter() {
