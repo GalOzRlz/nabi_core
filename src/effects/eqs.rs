@@ -14,8 +14,11 @@ pub fn simple_lowpass(cutoff_val: CcNode, max_cutoff_hz: f32) -> Net {
     ))
 }
 
-pub fn prophet_lowpass_filter() -> Net {
-    Net::wrap(Box::new(dlowpass(Tanh(1.0))))
+pub fn prophet_lowpass_filter(freq_cc: Net, q_cc: CcNode) -> Net {
+    let first = (pass() | (freq_cc.clone()) | q_cc.clone()) >> dlowpass(Tanh(1.0));
+    let second = (pass() | (freq_cc) | q_cc) >> dlowpass(Tanh(1.0));
+    let combined = first >> second;
+    Net::wrap(Box::new(combined))
 }
 
 fn eq5() -> An<Chain<U5, FixedSvf<f64, BellMode<f64>>>> {

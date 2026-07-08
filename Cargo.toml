@@ -32,15 +32,9 @@ globwalk = "0.9.1"
 petname = "3.0.0"
 core_affinity2 = "0.15.4"
 nix = "0.31.3"
-
-
-[dev-dependencies]
 strum = "0.28.0"
 strum_macros = "0.28.0"
-
-[dependencies.fundx7]
-git = "https://github.com/GalOzRlz/fundx7"
-branch = "main"
+fundx7 = "0.0.1"
 
 [features]
 profile-callback = []

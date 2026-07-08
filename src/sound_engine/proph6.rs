@@ -9,7 +9,7 @@ use crate::effects::eqs::prophet_lowpass_filter;
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::math::semitone_ratio;
-use fundsp::prelude64::{dc, pass};
+use fundsp::prelude64::dc;
 use linkme::distributed_slice;
 use std::borrow::Cow;
 use std::str::FromStr;
@@ -93,13 +93,13 @@ pub fn proph6(state: &SharedMidiState, params: &Parameterized) -> Box<dyn AudioU
     let filter_q = params.sound_cc_or_default("filter_q", state);
     let filter_env_amount =
         cc_node_to_minus_one(params.sound_cc_or_default("filter_env_amount", state));
-    let master_filter = (pass()
-        | filter_cutoff
-            + (b_mod_filter_cutoff * 15_000.0)
-            + to_net(mod_adsr) * (filter_env_amount * 15_000.0)
-            + lfo_filter
-        | filter_q)
-        >> prophet_lowpass_filter();
+
+    let filter_freq = filter_cutoff
+        + (b_mod_filter_cutoff * 15_000.0)
+        + to_net(mod_adsr) * (filter_env_amount * 15_000.0)
+        + lfo_filter;
+
+    let master_filter = prophet_lowpass_filter(filter_freq, filter_q);
 
     let noise = params
         .get_noise_node_type("noise_shape")
