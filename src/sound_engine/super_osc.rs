@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::envelopes::assemble_cc_adsr;
 use crate::common::modulators::{cc_to_cents_by_step, cc_unidirectional_spread_step};
 use crate::common::params::ParamType::{Float32, Oscillator, String};
@@ -8,7 +8,7 @@ use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
 use fundsp::prelude::constant;
-use fundsp::prelude64::{An, dc};
+use fundsp::prelude64::{An, U1, dc};
 use linkme::distributed_slice;
 use std::borrow::Cow;
 use std::ops::Add;
@@ -23,7 +23,7 @@ pub fn super_osc(state: &SharedMidiState, params: &Parameterized) -> Box<dyn Aud
     let params_owned = params.clone();
     let state_owned = state.clone();
 
-    let mut synth = StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(move |args: [f32; 1]| {
+    let mut synth = NetRebuilderAdapter::<1, 1, U1>::new(Arc::new(move |args: [f32; 1]| {
         let detune_by = params_owned
             .get_non_cc_param("detune_by")
             .unwrap()

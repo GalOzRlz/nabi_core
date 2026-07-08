@@ -1,4 +1,4 @@
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
 use fundsp::Frame;
@@ -18,8 +18,8 @@ pub fn smooth_random_lfo_freq(freq: f32) -> Net {
     to_net(lfo(move |t| spline_noise(1, t * freq as f64)) >> follow(freq - 0.05))
 }
 
-pub fn smooth_random_lfo() -> An<StaticParamsAudioNodeAdapter<1, 1>> {
-    let mut node = An(StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(
+pub fn smooth_random_lfo() -> An<NetRebuilderAdapter<1, 1, U1>> {
+    let mut node = An(NetRebuilderAdapter::<1, 1, U1>::new(Arc::new(
         |args: [f32; 1]| smooth_random_lfo_freq(args[0]),
     )));
     node.disable_fadeout();

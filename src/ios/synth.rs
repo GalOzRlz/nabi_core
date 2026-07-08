@@ -579,7 +579,7 @@ impl<const N: usize> VoiceManager<N> {
                 } => {
                     // quantized to 0.0-1.0 with 0.01 steps:
                     if let Some(&(group, idx)) = self.cc_to_usize_index.get(control) {
-                        let norm = *value as f32 / 127.0;
+                        let norm = (*value as f32 / 127.0).clamp(0.000001, 1.0); // don't use absolute zero to avoid calculation edge cases
                         let current = self.get_current_patch().clone();
                         let mut cc_line = "".to_string();
                         match group {

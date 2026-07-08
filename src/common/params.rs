@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::envelopes::CcADSR;
 use crate::common::helpers::{stereo_to_mono_unit, to_mono_unit, to_zero_mono_unit};
 use crate::common::modulators::{detune_map, smooth_random_lfo};
@@ -34,7 +34,7 @@ pub trait CcInit {
 pub enum LFO {
     Osc(OscillatorType),
     Noise(NoiseType),
-    SmoothNoise(An<StaticParamsAudioNodeAdapter<1, 1>>),
+    SmoothNoise(An<NetRebuilderAdapter<1, 1, U1>>),
     SampleAndHold,
 }
 
@@ -301,7 +301,9 @@ impl Parameterized {
         let attack = self.sound_cc_or_map(attack, state, |x| x.value.as_f32().unwrap());
         let decay = self.sound_cc_or_map(decay, state, |x| x.value.as_f32().unwrap());
         let sustain = self.sound_cc_or_default(sustain, state);
-        let release = self.sound_cc_or_map(release, state, |x| x.value.as_f32().unwrap());
+        let release = self.sound_cc_or_map(release, state, |x| {
+            x.value.as_zero_to_one_f32().unwrap() * 10.0
+        });
         (attack, decay, sustain, release)
     }
 

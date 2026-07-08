@@ -1,14 +1,13 @@
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
 use crate::common::modulators::{smooth_noise_constructor, smooth_random_lfo_freq};
 use crate::common::params::{CcNode, NonCcParam};
-use crate::effects::helpers::cc_controlled_wet_dry_fx;
 use fundsp::audiounit::Unit;
 use fundsp::combinator::An;
 use fundsp::math::smooth3;
 use fundsp::net::Net;
-use fundsp::prelude64::{U1, chorus, dc, delay, feedback, lfo, pass, tap, tap_linear};
+use fundsp::prelude64::{U1, chorus, dc, delay, feedback, lfo, pass, tap_linear};
 use std::f32::consts::LN_2;
 use std::f64::consts::PI;
 use std::sync::Arc;
@@ -70,19 +69,22 @@ pub fn tape_wow(depth: CcNode) -> Net {
     wet_amount.clone() | wet_amount
 }
 
-pub fn cc_controlled_chorus(seed: u64) -> An<StaticParamsAudioNodeAdapter<4, 1>> {
-    An(StaticParamsAudioNodeAdapter::<4, 1>::new(Arc::new(
+pub fn cc_controlled_chorus(seed: u64) -> An<NetRebuilderAdapter<4, 1, U1>> {
+    let mut chorus = An(NetRebuilderAdapter::<4, 1, U1>::new(Arc::new(
         move |args: [f32; 4]| to_net(chorus(seed, args[1], args[2], args[3])),
-    )))
+    )));
+    chorus.rebuild_on_change(|x, y| x[3] != y[3]);
+    chorus
 }
 
 /// Stereo chorus inspired by the Juno-60, with cc controlled modulation frequency
 pub fn stereo_j_chorus(depth: CcNode, mod_frequency: CcNode) -> Net {
-    let left_chorus = cc_controlled_chorus(1);
-    let right_chorus = cc_controlled_chorus(2);
-
+    let left_chorus = cc_controlled_chorus(1) * 1.8;
+    let right_chorus = (cc_controlled_chorus(3) * 1.8) >> delay(0.007);
     let left_input =
-        to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency.clone()) >> left_chorus);
-    let right_input = to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency) >> right_chorus);
-    cc_controlled_wet_dry_fx(depth, left_input | right_input)
+        to_net((pass() | dc(0.0035) | dc(0.0042) | mod_frequency.clone() * 10.0) >> left_chorus);
+    let right_input =
+        to_net((pass() | dc(0.0038) | dc(0.0044) | mod_frequency * 10.0) >> right_chorus);
+    let wet = 1.0 - depth.clone();
+    (pass() * wet.clone() | pass() * wet) & (left_input * depth.clone() | right_input * depth)
 }

@@ -11,41 +11,41 @@ type GenericNetFunc<const N: usize> = Arc<dyn Fn([f32; N]) -> Net + Send + Sync>
 type RebuildChangeFn<const N: usize> = dyn Fn([f32; N], [f32; N]) -> bool + Send + Sync;
 type RebuildConditionFn<const N: usize> = dyn Fn([f32; N]) -> bool + Send + Sync;
 
-/// Generic wrapper for M-inputs M-outputs Nets (where first 0..<M inputs are mapped for the tick() function) which have only f32 params in their signature.
-/// A convenience closure that assembles the net from an array of N ( M audio outputs + static parameters)
+/// Generic wrapper to create a Net with N-total-inputs (all that's piped to the net), M-processed inputs (for original Net.tick()) and U1/U2/.. outputs (from original Net).
+/// This is used for functions which have only f32 params in their signature and require rebuilding with some CC changes.
+/// A convenience closure that assembles and re-assembles the net from an array of N total params - and rebuilds from [0..M] params.
+/// The amount of outputs from the original wrapped function is determined by the third constant: U1 for mono, U2 for stereo etc.
 /// is provided - which can then be changed via Net::pipe (usually for CC control of static parameters).
-/// This allows for modulation of otherwise static parameters on the fly - with the net being rebuilt only when needed (with cooldowning).
-/// By convention [0..<M] of the inputs are reserved for audio and the rest of N will be the params, in the order in which the closure expects.
+/// This allows for modulation of otherwise static parameters on the fly - with the net being rebuilt only when needed (after a cool down period).
 ///
-/// M = 1 means mono Net,
-/// M = 2 means stereo Net, etc.
+/// The adapter will rebuild only after jittering has ended for n amount of samples (set in self.process_calls_threshold).
+/// By default, it will check any of the non-input signals ([0..M]) - for better precision use the rebuild_on_condition / rebuild_on_change methods.
 ///
-/// N signifies the total number of inputs via pipe (>>) while M is the output arity (1 = U1, etc.)
 /// ### Example
 /// ```
-/// use nabi_core::common::adapters::StaticParamsAudioNodeAdapter;
-/// use fundsp::prelude64::*;
 /// use std::sync::Arc;
-/// fn cc_reverb() ->An<Pipe<Stack<Stack<Stack<Stack<Pass, Pass>, Pass>, Pass>, Pass>, StaticParamsAudioNodeAdapter<5, 2>>> {
-///     let reverb_builder = StaticParamsAudioNodeAdapter::<5, 2>::new(Arc::new(
+/// use fundsp::prelude64::*;
+/// use nabi_core::common::adapters::NetRebuilderAdapter;///
+/// use nabi_core::common::fundsp::to_net;
+///
+/// fn cc_reverb() -> Net {
+///     let reverb_builder = NetRebuilderAdapter::<5, 2, U2>::new(Arc::new(
 ///         |args: [f32; 5]| {
 ///         // args[0], args[1] are audio (ignored here, but still passed through - N being the target input count)
-///         Net::wrap(Box::new(reverb_stereo(args[2], args[3], args[4])))
+///         to_net(reverb_stereo(args[2], args[3], args[4]))
 ///     }
 ///     ));
-///     // 5 total inputs with 2 outputs (Stereo)
+///     // 5 total inputs 2 are processed and 2 are outputted (Stereo)
 ///     let reverb_adapter = An(reverb_builder);
-///     // all inputs are now able to be piped into the wrapper!
-///     ( pass() | pass() | pass() | pass() | pass() ) >> reverb_adapter
+///     /// all inputs are now piped into the wrapper!
+///     to_net((pass() | pass() | pass() | pass() |pass() ) >> reverb_adapter)
 /// }
 /// ```
 #[derive(Clone)]
-pub struct StaticParamsAudioNodeAdapter<const N: usize, const M: usize>
+pub struct NetRebuilderAdapter<const N: usize, const M: usize, I: Size<f32>>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
-    Const<M>: ToUInt,
-    U<M>: Size<f32>,
 {
     inner: GenericNetFunc<N>,
     net: Net,
@@ -54,31 +54,27 @@ where
     params_temp_cooldown: [f32; N],
     params_post_cooldown: [f32; N],
     process_cooldown_counter: usize,
-    process_calls_threshold: usize,
+    pub process_calls_threshold: usize,
     fadeout: bool,
     fadeout_sec: f32,
     rebuild_condition_func: Option<Arc<RebuildConditionFn<N>>>,
     rebuild_change_func: Option<Arc<RebuildChangeFn<N>>>,
     init_checker: bool,
-    output_buffer: GenericArray<f32, U<M>>,
-    detection_lowest_value: usize,
+    output_buffer: GenericArray<f32, I>,
 }
 
-impl<const N: usize, const M: usize> StaticParamsAudioNodeAdapter<N, M>
+impl<const N: usize, const M: usize, I: Size<f32>> NetRebuilderAdapter<N, M, I>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
-    Const<M>: ToUInt,
-    U<M>: Size<f32>,
 {
     pub fn new(inner: GenericNetFunc<N>) -> Self {
         assert!(
             N >= M,
             "number of total inputs cannot be lower than the the number of outputs!"
         );
-        let detection_lowest_value = { if M == 1 { 0 } else { M } };
 
-        StaticParamsAudioNodeAdapter {
+        NetRebuilderAdapter {
             inner,
             params_post_cooldown: [0.0; N],
             params_temp_cooldown: [0.0; N],
@@ -93,7 +89,6 @@ where
             rebuild_change_func: None,
             init_checker: true,
             output_buffer: GenericArray::generate(|_| 0.0),
-            detection_lowest_value,
         }
     }
 
@@ -146,16 +141,13 @@ where
         for i in 0..self.params_state.len() {
             self.params_temp_cooldown[i] = input[i];
         }
-        if self.params_temp_cooldown[self.detection_lowest_value..N]
-            != self.params_post_cooldown[self.detection_lowest_value..N]
-        {
+        if self.params_temp_cooldown[M..] != self.params_post_cooldown[M..] {
             self.params_post_cooldown = self.params_temp_cooldown;
             self.process_cooldown_counter = 0;
         } else {
             self.process_cooldown_counter += 1;
         }
-        if self.params_post_cooldown[self.detection_lowest_value..N]
-            != self.params_state[self.detection_lowest_value..N]
+        if self.params_post_cooldown[M..] != self.params_state[M..]
             && self.process_calls_threshold <= self.process_cooldown_counter
         {
             if self.should_rebuild() {
@@ -171,6 +163,10 @@ where
                     fadeout,
                     Box::new((self.inner)(self.params_post_cooldown)),
                 );
+                eprintln!(
+                    "previous state: {:?}, current {:?}",
+                    self.params_state, self.params_temp_cooldown
+                );
                 self.params_state = self.params_temp_cooldown;
                 eprintln!("changed value for adapter <{}, {}>", N, M);
             } else {
@@ -180,16 +176,14 @@ where
     }
 }
 
-impl<const N: usize, const M: usize> AudioNode for StaticParamsAudioNodeAdapter<N, M>
+impl<const N: usize, const M: usize, I: Size<f32>> AudioNode for NetRebuilderAdapter<N, M, I>
 where
     Const<N>: ToUInt,
     U<N>: Size<f32>,
-    Const<M>: ToUInt,
-    U<M>: Size<f32>,
 {
     const ID: u64 = 60000 + N as u64 + M as u64;
     type Inputs = U<N>;
-    type Outputs = U<M>;
+    type Outputs = I;
 
     fn reset(&mut self) {
         self.net.reset();
