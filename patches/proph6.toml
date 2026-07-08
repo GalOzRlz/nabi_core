@@ -1,0 +1,14 @@
+[[program]]
+function = "proph6"
+name = "proph6 default"
+
+[program.effects]
+chain = [
+    "reverb",
+]
+
+[program.effects.configs.reverb.values]
+"%" = 0.31496062874794006
+length = 1.600000023841858
+room_size = 5.0
+damping = 0.6499999761581421

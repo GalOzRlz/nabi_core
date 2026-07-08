@@ -1,7 +1,7 @@
 use crate::common::params::CcNode;
 use fundsp::audiounit::AudioUnit;
 use fundsp::net::Net;
-use fundsp::prelude64::{U2, constant, multipass, split};
+use fundsp::prelude64::{U2, constant, multipass};
 
 /// Factory for stereo effects with wet/dry control via Net  (suitable for live Midi CC)
 pub fn cc_controlled_wet_dry_fx(wet_amount: CcNode, effect: Net) -> Net {
@@ -18,7 +18,7 @@ pub fn cc_controlled_wet_dry_fx(wet_amount: CcNode, effect: Net) -> Net {
 
 pub fn to_stereo(net: Net) -> Net {
     match net.inputs() {
-        1 => net >> split::<U2>(),
+        1 => (net.clone() | net),
         2 => net,
         _ => panic!("only 1 and 2 inputs are supported!"),
     }

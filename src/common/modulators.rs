@@ -1,15 +1,49 @@
+use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::fundsp::to_net;
 use crate::common::helpers::to_mono_unit;
 use fundsp::Frame;
 use fundsp::audionode::Map;
 use fundsp::audiounit::Unit;
-use fundsp::combinator::An;
-use fundsp::prelude64::{U1, U2, map, semitone_ratio, unit};
+use fundsp::funutd::math::Float;
+use fundsp::math::{SegmentInterpolator, ease_noise, spline_noise};
+use fundsp::prelude64::{An, Net, U1, U2, follow, lfo, map, semitone_ratio, unit};
+use std::sync::Arc;
+
+/// Turn -1.0 to 1.0 stream into 0.0 to 1.0
+pub(crate) fn to_unipolar(lfo: Net) -> Net {
+    (lfo * 0.5) + 0.5
+}
+
+pub fn smooth_random_lfo_freq(freq: f32) -> Net {
+    to_net(lfo(move |t| spline_noise(1, t * freq as f64)) >> follow(freq - 0.05))
+}
+
+pub fn smooth_random_lfo() -> An<StaticParamsAudioNodeAdapter<1, 1>> {
+    let mut node = An(StaticParamsAudioNodeAdapter::<1, 1>::new(Arc::new(
+        |args: [f32; 1]| smooth_random_lfo_freq(args[0]),
+    )));
+    node.disable_fadeout();
+    node
+}
+
+pub fn smooth_noise_constructor<T: Float + fundsp::Float>(
+    smoothing_func: impl SegmentInterpolator<T> + Send + Sync + 'static,
+    freq: T,
+) -> Net {
+    let freq_f64 = fundsp::Float::to_f64(freq);
+    let node = lfo(move |t| {
+        let x = t * freq_f64;
+        let result: T = ease_noise(smoothing_func.clone(), 1, <T as fundsp::Num>::from_f64(x));
+        fundsp::Float::to_f64(result)
+    });
+    to_net(node)
+}
 
 /// Generic mapping for cc values (0.0-1.0) resulting in frequency ratios matching the desired detuning.
-/// Used as a multiplier with the base frequency provided by the patch tuner.
-pub(crate) fn detune_map(semitone: f32) -> An<Unit<U1, U1>> {
+/// Used as a multiplier with a base frequency.
+pub fn detune_map(semitone: f32) -> An<Unit<U1, U1>> {
     let mapping = Box::new(map(move |i: &Frame<f32, U1>| {
-        let semitones = -semitone + 2.0 * semitone * i[0];
+        let semitones = (-semitone + (2.0 * semitone) * i[0]);
         semitone_ratio(semitones)
     }));
     to_mono_unit(mapping)
@@ -18,7 +52,7 @@ pub(crate) fn detune_map(semitone: f32) -> An<Unit<U1, U1>> {
 /// Detune mapping for cc values (0.0-1.0) between -1 semitones and +1 semitones.
 /// Used as a multiplier with the base frequency provided by the patch tuner.
 ///
-pub(crate) fn detune_map_semitone() -> An<Map<fn(&Frame<f32, U1>) -> f32, U1, f32>> {
+pub fn detune_map_semitone() -> An<Map<fn(&Frame<f32, U1>) -> f32, U1, f32>> {
     map(move |i: &Frame<f32, U1>| {
         let semitones = -1.0 + 2.0 * i[0];
         semitone_ratio(semitones)
