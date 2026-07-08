@@ -1,0 +1,18 @@
+[[program]]
+function = "dx7_sysex"
+name = "dx7"
+[program.sound.values]
+patch_num = 5.0
+[program.effects]
+chain = ["eq2", "reverb"]
+[program.effects.configs.reverb.values]
+room_size = 4.0
+damping   = 0.8
+length    = 1.0
+"%" = 0.5
+[program.effects.configs.reverb.mapping]
+"%" = 1
+length = 2
+[program.effects.configs.eq2.values]
+lowcut = 0.0
+highcut = 1.0

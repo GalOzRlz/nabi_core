@@ -1,4 +1,5 @@
 patch_order = [
+    "dx7",
     "Super Triangle",
     "proph6 default",
     "morph2 A",
