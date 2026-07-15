@@ -1,4 +1,4 @@
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::params::{CcNode, CcParam, NonCcParam, ParamType, Parameterized};
 use crate::effects::effects_building::EffectFunc;
@@ -26,7 +26,7 @@ fn cc_controlled_reverb(
             reverb_stereo(x[2], x[3], x[4]) >> (highpass_hz(200.0, 0.2) | highpass_hz(200.0, 0.2)),
         )
     });
-    let mut reverb_adapter = StaticParamsAudioNodeAdapter::<5, 2>::new(reverb_builder);
+    let mut reverb_adapter = NetRebuilderAdapter::<5, 2, U2>::new(reverb_builder);
     reverb_adapter.set_fadeout_time(0.5);
     let reverb =
     // assumes room size and reverb times are 0-10
@@ -233,14 +233,14 @@ static J_CHORUS: EffectDef = EffectDef {
         name: "j_chorus",
         cc_params: Some(Cow::Borrowed(&[
             CcParam {
-                value: ParamType::ZeroOneFloat(0.8),
-                cc_norm_index: 2,
+                value: ParamType::ZeroOneFloat(0.5),
+                cc_norm_index: 5,
                 name: "depth",
                 description: None,
             },
             CcParam {
-                value: ParamType::ZeroTenFloat(0.822), // Mode II on the Juno-60 (Mode I is around  0.5, III is  9.425)
-                cc_norm_index: 3,
+                value: ParamType::ZeroTenFloat(0.00822), // Mode II on the Juno-60 (Mode I is around  0.5, III is  9.425)
+                cc_norm_index: 6,
                 name: "mod_freq",
                 description: None,
             },

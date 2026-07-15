@@ -1,5 +1,5 @@
 use crate::SharedMidiState;
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::envelopes::assemble_cc_adsr;
 use crate::common::fundsp::to_net;
 use crate::common::params::ParamType::{Float32, String};
@@ -7,7 +7,7 @@ use crate::common::params::{CcParam, NonCcParam, ParamType, Parameterized};
 use crate::sound_engine::sound_building::{SOUNDS, SoundFactory};
 use cpal::SAMPLE_RATE_CD;
 use fundsp::audiounit::AudioUnit;
-use fundsp::prelude64::An;
+use fundsp::prelude64::{An, U1};
 use fundx7::PatchBank;
 use fundx7::fm::voice::{Parameters, Voice};
 use linkme::distributed_slice;
@@ -93,13 +93,14 @@ pub fn dx7_scroller(state: &SharedMidiState, params: &Parameterized) -> Box<dyn 
     let (a, d, s, r) = params.get_cc_adsr_params("attack", "decay", "sustain", "release", state);
     let cc_adsr = assemble_cc_adsr(a, d, s, r);
 
-    let patch_bank = std::fs::read("sysex/star1-fast-decay.syx").unwrap();
+    let patch_bank_file = std::fs::read("sysex/star1-fast-decay.syx").unwrap();
+    let patch_bank = PatchBank::new(&patch_bank_file);
+    let patch_len = patch_bank.patches.len();
 
-    let patch_bank = PatchBank::new(&patch_bank);
-    let mut fm_synth = An(StaticParamsAudioNodeAdapter::<4, 1>::new(Arc::new(
+    let mut fm_synth = An(NetRebuilderAdapter::<4, 3, U1>::new(Arc::new(
         move |args: [f32; 4]| {
-            let step = 1.0 / patch_bank.patches.len() as f32;
-            let selected = patch_bank.patches[(args[3] / step).round() as usize];
+            let index = (args[3] * (patch_len - 1) as f32).round() as usize;
+            let selected = patch_bank.patches[index];
             to_net(An(Voice::new(
                 selected,
                 Parameters::default(),
@@ -108,10 +109,12 @@ pub fn dx7_scroller(state: &SharedMidiState, params: &Parameterized) -> Box<dyn 
         },
     )));
     fm_synth.disable_fadeout();
-    fm_synth.rebuild_on_change(|x, y| x[3] != y[3]);
+    fm_synth.rebuild_on_change(move |x, y| {
+        (x[3] * (patch_len - 1) as f32).round() != (y[3] * (patch_len - 1) as f32).round()
+    });
     let cc_scroller = params.sound_cc_or_default("scroll", state);
     let synth = (state.note_var() | state.gate_var() | state.velocity_var() | cc_scroller)
-        >> fm_synth * 0.5;
+        >> fm_synth * 0.65;
     state.assemble_pitched_sound(Box::new(synth), params.boxed_cc_adsr(cc_adsr, state))
 }
 

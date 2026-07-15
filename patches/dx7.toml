@@ -1,18 +1,40 @@
 [[program]]
-function = "dx7_sysex"
-name = "dx7"
+function = "dx7_scroller"
+name = "dx7perch"
+
 [program.sound.values]
-patch_num = 5.0
+decay = 0.09999999403953552
+release = 6.299212455749512
+attack = 0.004999999888241291
+scroll = 0.7716535329818726
+sustain = 1.0
+file_path = "sysex/star1-fast-decay.syx"
+
 [program.effects]
-chain = ["eq2", "reverb"]
+chain = [
+    "eq2",
+    "j_chorus",
+    "reverb",
+]
+
+[program.effects.configs.eq2.values]
+lp_max_frequency = 18000.0
+lowcut_freq = 0.05511811003088951
+highcut_freq = 0.29921260476112366
+lowpass_q = 0.05000000074505806
+hp_max_frequency = 1000.0
+highpass_q = 0.3499999940395355
+
 [program.effects.configs.reverb.values]
 room_size = 4.0
-damping   = 0.8
-length    = 1.0
-"%" = 0.5
+damping = 0.800000011920929
+"%" = 0.36220473051071167
+length = 1.496062994003296
+
 [program.effects.configs.reverb.mapping]
 "%" = 1
 length = 2
-[program.effects.configs.eq2.values]
-lowcut = 0.0
-highcut = 1.0
+
+[program.effects.configs.j_chorus.values]
+mod_freq = 4.409448623657227
+depth = 0.5275590419769287

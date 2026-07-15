@@ -1,12 +1,12 @@
 use crate::GATE_OFF;
-use crate::common::adapters::StaticParamsAudioNodeAdapter;
+use crate::common::adapters::NetRebuilderAdapter;
 use crate::common::fundsp::to_net;
 use crate::common::params::{CcNode, CcParam, ParamType};
 use fundsp::audionode::{Pass, Pipe, Stack};
 use fundsp::follow::Follow;
 use fundsp::prelude::adsr_live;
 use fundsp::prelude32::Var;
-use fundsp::prelude64::{An, pass};
+use fundsp::prelude64::{An, U1, pass};
 use std::sync::Arc;
 
 pub type CcADSR = An<
@@ -18,7 +18,7 @@ pub type CcADSR = An<
             >,
             Pipe<Var, Follow<f64>>,
         >,
-        StaticParamsAudioNodeAdapter<5, 1>,
+        NetRebuilderAdapter<5, 1, U1>,
     >,
 >;
 
@@ -64,14 +64,14 @@ pub fn cc_controlled_adsr_params(
 /// Input 4: Release (Seconds0]
 ///
 /// Output 0: scaled ADSR value from 0.0 to 1.0
-pub fn cc_controlled_adsr() -> An<StaticParamsAudioNodeAdapter<5, 1>> {
-    An(StaticParamsAudioNodeAdapter::<5, 1>::new(Arc::new(
+pub fn cc_controlled_adsr() -> An<NetRebuilderAdapter<5, 1, U1>> {
+    An(NetRebuilderAdapter::<5, 1, U1>::new(Arc::new(
         |args: [f32; 5]| to_net(adsr_live(args[1], args[2], args[3], args[4])),
     )))
 }
 
-pub fn cc_controlled_attack_decay() -> An<StaticParamsAudioNodeAdapter<3, 1>> {
-    let mut adsr = An(StaticParamsAudioNodeAdapter::<3, 1>::new(Arc::new(
+pub fn cc_controlled_attack_decay() -> An<NetRebuilderAdapter<3, 1, U1>> {
+    let mut adsr = An(NetRebuilderAdapter::<3, 1, U1>::new(Arc::new(
         |args: [f32; 3]| to_net(adsr_live(args[1], args[2], 0.0, 0.0)),
     )));
     adsr.rebuild_on_condition(|x| x[0] == GATE_OFF);
